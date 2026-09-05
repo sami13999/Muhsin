@@ -22,6 +22,12 @@ const inviteMemberSchema = z.object({
   role: z.enum(['admin', 'member']).default('member'),
 });
 
+const updateWorkspaceSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  defaultTimezone: z.string().optional(),
+  defaultCurrency: z.string().length(3).optional(),
+});
+
 // ── Route Factory ────────────────────────────────────────────
 
 export function createM1Routes(db: Database) {
@@ -148,6 +154,68 @@ export function createM1Routes(db: Database) {
     const workspaceId = c.req.param('id');
 
     const result = await workspaceRepository.findById(db, workspaceId);
+    if (!result) {
+      return c.json(
+        {
+          error: {
+            code: 'RESOURCE_NOT_FOUND',
+            message: `Workspace not found: ${workspaceId}`,
+            request_id: requestId,
+          },
+        },
+        404,
+      );
+    }
+
+    return c.json({
+      data: {
+        workspace: result.workspace,
+        memberCount: result.memberCount,
+        creditBalance: result.creditBalance.toString(),
+      },
+      meta: { request_id: requestId },
+    });
+  });
+
+  /**
+   * PATCH /api/v1/workspaces/:id
+   * Update workspace settings. Requires owner/admin role.
+   */
+  routes.patch('/workspaces/:id', async (c) => {
+    const tenancy = c.get('tenancy') as TenancyContext | undefined;
+    const requestId = c.get('requestId');
+    const workspaceId = c.req.param('id');
+
+    if (tenancy && !tenancy.roles.includes('owner') && !tenancy.roles.includes('admin')) {
+      return c.json(
+        {
+          error: {
+            code: 'ROLE_INSUFFICIENT',
+            message: 'Only owners and admins can update workspace settings',
+            request_id: requestId,
+          },
+        },
+        403,
+      );
+    }
+
+    const body = await c.req.json();
+    const parsed = updateWorkspaceSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request body',
+            details: parsed.error.flatten(),
+            request_id: requestId,
+          },
+        },
+        400,
+      );
+    }
+
+    const result = await workspaceRepository.update(db, workspaceId, parsed.data);
     if (!result) {
       return c.json(
         {

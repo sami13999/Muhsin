@@ -240,3 +240,33 @@ export async function updateSubscriptionStatus(
     })
     .where(eq(workspace.workspaceId, workspaceId));
 }
+
+export interface UpdateWorkspaceInput {
+  name?: string;
+  defaultTimezone?: string;
+  defaultCurrency?: string;
+}
+
+/**
+ * Update workspace details (Name, default timezone, default currency).
+ */
+export async function update(
+  db: Database,
+  workspaceId: string,
+  input: UpdateWorkspaceInput,
+): Promise<WorkspaceWithMeta | null> {
+  const updateData: Record<string, unknown> = {
+    updatedAt: new Date(),
+  };
+
+  if (input.name !== undefined) updateData['name'] = input.name;
+  if (input.defaultTimezone !== undefined) updateData['defaultTimezone'] = input.defaultTimezone;
+  if (input.defaultCurrency !== undefined) updateData['defaultCurrency'] = input.defaultCurrency;
+
+  await db
+    .update(workspace)
+    .set(updateData)
+    .where(eq(workspace.workspaceId, workspaceId));
+
+  return findById(db, workspaceId);
+}
