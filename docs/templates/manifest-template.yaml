@@ -1,0 +1,78 @@
+# MUSHIN Module Manifest Template
+# Doc 25 §Module Ownership — every module MUST have a manifest.yaml
+# Copy this file to {module_dir}/manifest.yaml and fill in values.
+
+module_id: "M{N}"                    # e.g. "M2"
+module_name: "Creator Store"         # Human-readable name
+owner: "@team-or-handle"             # Primary owner (GitHub handle or team)
+
+# ── Database Ownership ────────────────────────────────────────
+# Tables this module exclusively writes to.
+# Other modules read via projections or owned interfaces ONLY.
+owns_tables:
+  - schema: gcp
+    tables:
+      - creator
+      - profile
+      - enrichment_snapshot
+      - niche_classification
+      - contact_record
+      - inflight_url_lock
+
+# ── API Surface ───────────────────────────────────────────────
+# HTTP paths this module exposes. Include method + path.
+exposed_api_paths:
+  - "GET  /api/v1/creators/:id"
+  - "POST /api/v1/creators/add-by-url"
+  - "GET  /api/v1/creators/:id/profiles"
+
+# ── Event Contracts ───────────────────────────────────────────
+# Events this module emits (written to platform.outbox).
+emitted_events:
+  - event_type: "creator.created"
+    scope_class: "gcp"
+    schema_version: "1"
+  - event_type: "creator.profile_enriched"
+    scope_class: "gcp"
+    schema_version: "1"
+
+# Events this module consumes (read from queue, idempotency via processed_event_ledger).
+consumed_events:
+  - event_type: "discovery.candidate_found"
+    consumer_group: "M2:discovery.candidate_found"
+    source_module: "M4"
+  - event_type: "scoring.completed"
+    consumer_group: "M2:scoring.completed"
+    source_module: "M6"
+
+# ── Alerts (M12 observability) ────────────────────────────────
+# Alerts this module owns. M12 routes PagerDuty/Slack based on these.
+owned_alerts:
+  - alert_id: "M2-GCP-WRITE-FAIL"
+    description: "GCP write failure rate > 5% in 5-min window"
+    severity: "critical"
+    runbook_url: "https://wiki.mushin.io/runbooks/m2-gcp-write-fail"
+  - alert_id: "M2-INDEX-PROJECTION-LAG"
+    description: "index_pending creators > 100 for > 10 min"
+    severity: "warning"
+    runbook_url: "https://wiki.mushin.io/runbooks/m2-index-lag"
+
+# ── Metrics (NFR-C01 cost telemetry) ─────────────────────────
+# Emit cost.recorded for every metered action. No exceptions.
+metrics:
+  - name: "mushin_gcp_creator_created_total"
+    type: "counter"
+    labels: ["source", "platform"]
+    description: "Total creators created in GCP"
+  - name: "mushin_gcp_enrichment_duration_seconds"
+    type: "histogram"
+    labels: ["source", "completeness_tier"]
+    description: "Enrichment pipeline duration"
+  - name: "mushin_gcp_enrichment_snapshot_total"
+    type: "counter"
+    labels: ["snapshot_type", "confidence_level"]
+    description: "Total enrichment snapshots produced"
+  - name: "mushin_cost_recorded_total"
+    type: "counter"
+    labels: ["action_type", "provider"]
+    description: "Cost telemetry per metered action (NFR-C01)"

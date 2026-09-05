@@ -1,0 +1,43 @@
+{
+  "name": "mushin-2.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "dev:api": "pnpm --filter @mushin/api dev",
+    "dev:web": "pnpm --filter @mushin/web dev",
+    "dev:workers": "pnpm --filter @mushin/workers dev",
+    "start:api": "pnpm --filter @mushin/api dev",
+    "start:workers": "pnpm --filter @mushin/workers start",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "test:integration": "turbo test:integration",
+    "db:migrate": "pnpm --filter @mushin/database migrate",
+    "db:generate": "pnpm --filter @mushin/database generate",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
+    "typecheck": "turbo typecheck",
+    "prepare": "husky",
+    "staff:create": "tsx scripts/staff-cli.ts create",
+    "staff:promote": "tsx scripts/staff-cli.ts promote",
+    "staff:demote": "tsx scripts/staff-cli.ts demote",
+    "staff:list": "tsx scripts/staff-cli.ts list"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "commander": "^15.0.0",
+    "husky": "^9.1.0",
+    "jimp": "^1.6.1",
+    "postgres": "^3.4.0",
+    "prettier": "^3.4.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.12",
+    "turbo": "^2.3.0"
+  }
+}

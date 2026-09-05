@@ -1,0 +1,48 @@
+{
+  "name": "@mushin/database",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./repositories/creator.repository": {
+      "types": "./dist/repositories/creator.repository.d.ts",
+      "import": "./dist/repositories/creator.repository.js"
+    },
+    "./repositories/credit.repository": {
+      "types": "./dist/repositories/credit.repository.d.ts",
+      "import": "./dist/repositories/credit.repository.js"
+    },
+    "./projections/creator-index-projection": {
+      "types": "./dist/projections/creator-index-projection.d.ts",
+      "import": "./dist/projections/creator-index-projection.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "generate": "drizzle-kit generate",
+    "migrate": "node --loader ts-node/esm src/migrations/run.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.38.0",
+    "pg": "^8.13.0",
+    "postgres": "^3.4.0"
+  },
+  "devDependencies": {
+    "@mushin/config": "workspace:*",
+    "@mushin/shared": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "drizzle-kit": "^0.30.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

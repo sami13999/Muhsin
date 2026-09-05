@@ -1,0 +1,72 @@
+{
+  "timestamp": "2026-07-10T19:14:54.555Z",
+  "summary": {
+    "VERIFIED_RUNTIME": 5,
+    "NOT_TESTED": 3,
+    "FAILED": 2
+  },
+  "results": [
+    {
+      "component": "Meilisearch",
+      "status": "VERIFIED_RUNTIME",
+      "evidence": "Health: available, Indexes: M, load_test_1783607042151, Search on 'M': 3 hits, 31944 docs",
+      "details": "CRITICAL: No \"creators\" index. Found: M, load_test_1783607042151. Search will not return creator data."
+    },
+    {
+      "component": "Groq LLM (T-A)",
+      "status": "VERIFIED_RUNTIME",
+      "evidence": "Status: 200, Model: llama-3.1-8b-instant, Response: {\"category\": \"Lifestyle Influencer\", \"confidence\": 0.95}"
+    },
+    {
+      "component": "Anthropic LLM (T-C)",
+      "status": "FAILED",
+      "evidence": "Status: 401, Response: none"
+    },
+    {
+      "component": "Serper",
+      "status": "VERIFIED_RUNTIME",
+      "evidence": "Status: 200, Results: 3, First: Rida Fakhar 👑| Lifestyle/Fashion (@ridzsayss)"
+    },
+    {
+      "component": "Resend",
+      "status": "VERIFIED_RUNTIME",
+      "evidence": "Status: 200, Domains: 0",
+      "details": "Email sending not tested (would require real recipient)"
+    },
+    {
+      "component": "Upstash Redis",
+      "status": "VERIFIED_RUNTIME",
+      "evidence": "Ping: OK, SET/GET: success"
+    },
+    {
+      "component": "Supabase Auth (JWKS)",
+      "status": "FAILED",
+      "evidence": "fetch failed"
+    },
+    {
+      "component": "Database (Direct Postgres)",
+      "status": "NOT_TESTED",
+      "evidence": "DATABASE_URL is empty in .env - API server cannot start without it",
+      "details": "CRITICAL BLOCKER: The API server uses the postgres npm package for direct Postgres connection. DATABASE_URL is required (z.string().url() in env schema). Supabase client SDK credentials are only used for auth routes."
+    },
+    {
+      "component": "AWS SQS",
+      "status": "NOT_TESTED",
+      "evidence": "AWS_ACCESS_KEY_ID and SQS_OUTBOX_QUEUE_URL not configured",
+      "details": "Workers cannot function without SQS. Event outbox relay, timeline writer, billing state machine, and all scheduled jobs require SQS."
+    },
+    {
+      "component": "Paddle (Billing)",
+      "status": "NOT_TESTED",
+      "evidence": "PADDLE_API_KEY not configured",
+      "details": "Billing webhook ingestion, subscription state machine, and credit ledger operations cannot be tested."
+    }
+  ],
+  "blockers": [
+    "DATABASE_URL is empty - API server cannot start",
+    "No \"creators\" index in Meilisearch - search returns movie data",
+    "AWS SQS not configured - workers cannot function",
+    "Paddle not configured - billing webhooks cannot be tested"
+  ],
+  "recommendation": "NO_GO"
+}

@@ -1,0 +1,1258 @@
+# Production Verification Matrix: AI SaaS Platform
+
+**Core Philosophy:** A prototype proves the system works when everything is right. This matrix proves the system survives when everything is wrong. 
+
+**Test Definition Schema:**
+* **Objective:** What we are proving.
+* **Preconditions:** Required system state.
+* **Steps:** Execution actions.
+* **Expected Result:** System behavior.
+* **Metrics:** Telemetry to observe.
+* **Pass Criteria:** Quantitative threshold.
+* **Severity:** SEV-1 (Outage) to SEV-4 (Minor).
+* **Automation:** CI/CD, Synthetic, or Manual.
+
+---
+
+## Layer 1: DNS / Global Traffic
+
+**SLO Validation:**
+* **SLI:** DNS Resolution Success Rate & Latency.
+* **SLO:** 99.99% success, p99 latency < 50ms.
+* **Error Budget:** 4.3 minutes downtime/month.
+* **Alerts:** Success rate < 99.9% (Page), Latency p99 > 100ms (Ticket).
+
+**Runbook: Global DNS Provider Outage**
+* **Detection:** Synthetic monitors fail across all regions; PagerDuty fires.
+* **Diagnosis:** Check provider status page; verify secondary DNS is healthy.
+* **Mitigation:** Shift NS records to secondary provider; update registrar.
+* **Rollback:** Revert NS records to primary.
+* **Communication:** Status page update: "Investigating DNS resolution delays."
+* **Postmortem:** Review TTL settings, secondary provider failover speed.
+
+### Test Matrix
+
+**[L1-FUNC-01] Geo-Routing Validation**
+* **Obj:** Verify traffic routes to correct region based on GeoIP.
+* **Pre:** DNS configured with GeoIP rules for US/EU.
+* **Steps:** 1. Query from US proxy. 2. Query from EU proxy.
+* **Exp:** US returns US IPs, EU returns EU IPs.
+* **Met:** Correct IP returned, resolution time.
+* **Pass:** 100% accuracy over 1,000 synthetic queries.
+* **Sev:** SEV-2. **Auto:** Yes (Synthetic).
+
+**[L1-FAIL-01] Primary DNS Provider Failure**
+* **Obj:** Verify failover to secondary DNS provider.
+* **Pre:** Primary DNS simulated as down (blackhole routing).
+* **Steps:** 1. Stop primary DNS. 2. Query domain.
+* **Exp:** Resolver falls back to secondary; TTL respected.
+* **Met:** Resolution success rate, fallback latency.
+* **Pass:** >99% success within 60s of primary failure.
+* **Sev:** SEV-1. **Auto:** Yes (Chaos).
+
+**[L1-CHAOS-01] Stale DNS Cache Poisoning**
+* **Obj:** Verify system handles stale DNS records gracefully.
+* **Pre:** Local DNS cache forced to hold stale IP.
+* **Steps:** 1. Change production IP. 2. Query from cached client.
+* **Exp:** Connection fails, client retries, fetches new IP.
+* **Met:** Time to recover, error rate during stale window.
+* **Pass:** Recovery < 2x TTL; no data corruption.
+* **Sev:** SEV-3. **Auto:** Yes.
+
+**[L1-LOAD-01] DNS Amplification / Query Spike**
+* **Obj:** Verify DNS infrastructure absorbs massive query volume.
+* **Pre:** Load generator configured for 1M QPS.
+* **Steps:** 1. Ramp query rate to 1M QPS over 5 mins.
+* **Exp:** Anycast network absorbs load; no authoritative timeout.
+* **Met:** QPS handled, query latency p99.
+* **Pass:** p99 latency < 100ms, 0% drop.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L1-SEC-01] DNS Hijacking / Zone Transfer**
+* **Obj:** Ensure unauthorized zone transfers are blocked.
+* **Pre:** AXFR/IXFR configured to deny all.
+* **Steps:** 1. Attempt `dig axfr @dns-server`.
+* **Exp:** Connection refused or transfer denied.
+* **Met:** Auth logs, network traces.
+* **Pass:** 100% denial of unauthorized transfers.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L1-RECOV-01] DNS Record Rollback**
+* **Obj:** Verify GitOps rollback restores DNS state.
+* **Pre:** Bad DNS record deployed to prod.
+* **Steps:** 1. Revert Git commit. 2. Trigger CI/CD.
+* **Exp:** DNS records revert to previous state.
+* **Met:** Time to revert, record accuracy.
+* **Pass:** Revert < 2 mins, records match Git.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L1-COMP-01] Data Residency Routing**
+* **Obj:** Verify EU data requests never resolve to US IPs.
+* **Pre:** Strict GeoIP routing enforced.
+* **Steps:** 1. Run 10k queries from EU IPs. 2. Inspect resolved IPs.
+* **Exp:** All IPs belong to EU ASN.
+* **Met:** IP geolocation accuracy.
+* **Pass:** 100% EU ASN resolution.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 2: Edge / CDN / WAF
+
+**SLO Validation:**
+* **SLI:** Cache Hit Ratio & Edge Latency.
+* **SLO:** Cache Hit > 85%, Edge Latency p99 < 30ms.
+* **Error Budget:** 15% miss rate allowed.
+* **Alerts:** Hit ratio < 70% (Ticket), Edge latency > 100ms (Page).
+
+**Runbook: Origin Pull Storm (Cache Stampede at Edge)**
+* **Detection:** Origin CPU spikes, edge latency increases, cache hit ratio drops.
+* **Diagnosis:** Check if a popular cache key expired or was purged.
+* **Mitigation:** Enable Origin Shield; manually purge and pre-warm cache.
+* **Rollback:** N/A (Operational fix).
+* **Communication:** "Investigating elevated latency."
+* **Postmortem:** Review cache TTLs, implement stale-while-revalidate.
+
+### Test Matrix
+
+**[L2-FUNC-01] Static Asset Caching**
+* **Obj:** Verify static assets are cached and served with correct headers.
+* **Pre:** Assets deployed, Cache-Control set.
+* **Steps:** 1. Request asset. 2. Request again.
+* **Exp:** 1st is MISS, 2nd is HIT. CF-Cache-Status correct.
+* **Met:** Cache status, response time.
+* **Pass:** 100% HIT on subsequent requests.
+* **Sev:** SEV-3. **Auto:** Yes.
+
+**[L2-FAIL-01] Origin Unreachable**
+* **Obj:** Verify edge serves stale content when origin is down.
+* **Pre:** Origin simulated as 5xx. Stale-while-error enabled.
+* **Steps:** 1. Kill origin. 2. Request cached asset.
+* **Exp:** Edge returns stale asset with Warning header.
+* **Met:** Response code, cache status.
+* **Pass:** 200 OK returned, no 5xx to client.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L2-CHAOS-01] WAF False Positive Injection**
+* **Obj:** Verify WAF blocks legitimate traffic if rules are misconfigured.
+* **Pre:** WAF rule set to block string "test".
+* **Steps:** 1. Send request with "test" in payload. 2. Send normal request.
+* **Exp:** 1st blocked (403), 2nd allowed (200).
+* **Met:** WAF block rate, false positive rate.
+* **Pass:** 100% block on payload, 0% block on normal.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L2-LOAD-01] Thundering Herd (TTL Expiry)**
+* **Obj:** Verify edge handles simultaneous cache misses without killing origin.
+* **Pre:** 1000 concurrent clients targeting same expiring key.
+* **Steps:** 1. Let key expire. 2. Fire 1000 requests.
+* **Exp:** Edge coalesces requests (request collapsing); origin gets 1 request.
+* **Met:** Origin RPS, edge latency p99.
+* **Pass:** Origin RPS < 10, edge p99 < 200ms.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L2-SEC-01] WAF Bypass via Encoding**
+* **Obj:** Ensure WAF catches SQLi/XSS via double-encoding.
+* **Pre:** WAF OWASP rules enabled.
+* **Steps:** 1. Send `%2527` (double encoded single quote).
+* **Exp:** WAF decodes and blocks (403).
+* **Met:** WAF block logs.
+* **Pass:** 100% block rate for encoded payloads.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L2-RECOV-01] Edge Configuration Rollback**
+* **Obj:** Verify bad WAF rule can be rolled back instantly.
+* **Pre:** WAF rule blocking all traffic deployed.
+* **Steps:** 1. Revert WAF config in Git. 2. Push.
+* **Exp:** WAF rules revert, traffic flows.
+* **Met:** Time to deploy, error rate.
+* **Pass:** Revert < 1 min, error rate drops to 0.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L2-COMP-01] Geo-Blocking Enforcement**
+* **Obj:** Verify traffic from sanctioned countries is blocked.
+* **Pre:** Geo-block list configured for OFAC countries.
+* **Steps:** 1. Route traffic via proxy in sanctioned country.
+* **Exp:** 403 Forbidden returned.
+* **Met:** Block logs, response code.
+* **Pass:** 100% block rate.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 3: API Gateway
+
+**SLO Validation:**
+* **SLI:** Gateway Availability & Routing Latency.
+* **SLO:** 99.99% Availability, p99 Routing Latency < 20ms.
+* **Error Budget:** 4.3 mins downtime/month.
+* **Alerts:** 5xx rate > 0.1% (Page), Latency > 50ms (Ticket).
+
+**Runbook: Gateway Routing Blackhole**
+* **Detection:** 100% 502/504 errors on specific API path.
+* **Diagnosis:** Check service discovery; verify backend health checks.
+* **Mitigation:** Manually override routing to healthy backend pool.
+* **Rollback:** Revert to automated service discovery.
+* **Communication:** "API routing issue identified, mitigating."
+* **Postmortem:** Fix health check thresholds, add gateway circuit breaker.
+
+### Test Matrix
+
+**[L3-FUNC-01] Path Routing & Versioning**
+* **Obj:** Verify `/v1/` and `/v2/` route to correct backends.
+* **Pre:** v1 and v2 services deployed.
+* **Steps:** 1. GET `/v1/resource`. 2. GET `/v2/resource`.
+* **Exp:** v1 hits v1 backend, v2 hits v2 backend.
+* **Met:** Backend target IP, response payload.
+* **Pass:** 100% correct routing.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L3-FAIL-01] Backend Service 5xx**
+* **Obj:** Verify gateway returns 502 and logs error when backend fails.
+* **Pre:** Backend configured to return 500.
+* **Steps:** 1. Send request to gateway.
+* **Exp:** Gateway returns 502, logs backend error.
+* **Met:** Response code, gateway error logs.
+* **Pass:** 502 returned, no gateway crash.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L3-CHAOS-01] Network Partition to Backend**
+* **Obj:** Verify gateway timeouts and fails fast.
+* **Pre:** Inject 100% packet loss to backend subnet.
+* **Steps:** 1. Send request.
+* **Exp:** Gateway returns 504 after configured timeout (e.g., 5s).
+* **Met:** Request latency, response code.
+* **Pass:** Latency <= timeout + 100ms, returns 504.
+* **Sev:** SEV-2. **Auto:** Yes (Chaos Mesh).
+
+**[L3-LOAD-01] 10x Traffic Spike**
+* **Obj:** Verify gateway auto-scales and maintains latency.
+* **Pre:** Baseline traffic at 1k RPS.
+* **Steps:** 1. Ramp to 10k RPS over 2 mins.
+* **Exp:** Gateway pods scale out, latency remains stable.
+* **Met:** RPS, p99 latency, pod count.
+* **Pass:** p99 < 50ms, 0% dropped requests.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L3-SEC-01] Rate Limit Bypass via Header Spoofing**
+* **Obj:** Ensure rate limit uses authenticated user ID, not just IP.
+* **Pre:** Rate limit set to 10 req/min per user.
+* **Steps:** 1. Send 11 requests with same JWT, different X-Forwarded-For.
+* **Exp:** 11th request returns 429.
+* **Met:** 429 rate, rate limit counter.
+* **Pass:** 100% block on 11th request.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L3-RECOV-01] Configuration Rollback**
+* **Obj:** Verify bad gateway config is reverted via GitOps.
+* **Pre:** Invalid routing config pushed.
+* **Steps:** 1. Revert PR. 2. Merge.
+* **Exp:** Gateway reloads valid config.
+* **Met:** Config reload time, error rate.
+* **Pass:** Reload < 10s, errors clear.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L3-COMP-01] Request Audit Logging**
+* **Obj:** Verify all API requests are logged for compliance.
+* **Pre:** Audit logging enabled.
+* **Steps:** 1. Send 100 requests. 2. Query log store.
+* **Exp:** 100 log entries with user, path, timestamp.
+* **Met:** Log count, completeness.
+* **Pass:** 100% log capture, < 5s ingestion lag.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+---
+
+## Layer 4: Identity & Authorization
+
+**SLO Validation:**
+* **SLI:** Auth Latency & Token Validation Success.
+* **SLO:** p99 Latency < 50ms, 99.99% validation success.
+* **Error Budget:** 4.3 mins downtime.
+* **Alerts:** Auth latency > 200ms (Page), Validation failure > 1% (Page).
+
+**Runbook: Identity Provider (IdP) Outage**
+* **Detection:** Login failures spike, token refresh fails.
+* **Diagnosis:** Check IdP status page; verify network connectivity.
+* **Mitigation:** Enable cached auth decisions (short TTL); halt new logins.
+* **Rollback:** Restore IdP connection.
+* **Communication:** "Login issues due to third-party IdP outage."
+* **Postmortem:** Increase cache TTL for auth decisions, implement IdP failover.
+
+### Test Matrix
+
+**[L4-FUNC-01] JWT Validation & RBAC**
+* **Obj:** Verify valid JWT grants access, invalid denies.
+* **Pre:** User with 'Editor' role.
+* **Steps:** 1. Request with valid JWT. 2. Request with expired JWT.
+* **Exp:** 200 OK, then 401 Unauthorized.
+* **Met:** Response codes, auth latency.
+* **Pass:** 100% correct authorization.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L4-FAIL-01] JWKS Endpoint Unreachable**
+* **Obj:** Verify system handles inability to fetch public keys.
+* **Pre:** Block network to JWKS endpoint.
+* **Steps:** 1. Send request with valid JWT.
+* **Exp:** Uses cached JWKS; if cache empty, denies access (fail closed).
+* **Met:** Auth success rate, JWKS cache hit.
+* **Pass:** Fails closed securely, no unauthorized access.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L4-CHAOS-01] Token Clock Skew**
+* **Obj:** Verify system handles time drift between auth and app servers.
+* **Pre:** App server clock skewed +5 mins.
+* **Steps:** 1. Issue token valid for 1 min. 2. App server validates.
+* **Exp:** Token accepted (leeway applied) or rejected based on policy.
+* **Met:** Auth success rate, clock delta.
+* **Pass:** Graceful handling (either strict fail or configured leeway).
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L4-LOAD-01] Token Refresh Storm**
+* **Obj:** Verify auth service handles mass token refresh.
+* **Pre:** 10k users with expiring tokens.
+* **Steps:** 1. Trigger refresh for all 10k simultaneously.
+* **Exp:** Auth service scales, no dropped requests.
+* **Met:** Refresh latency p99, error rate.
+* **Pass:** p99 < 100ms, 0% errors.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L4-SEC-01] JWT Forgery (Algorithm Confusion)**
+* **Obj:** Ensure server rejects tokens signed with 'none' or weak alg.
+* **Pre:** Server expects RS256.
+* **Steps:** 1. Send token signed with HS256 using public key. 2. Send 'none'.
+* **Exp:** Both rejected (401).
+* **Met:** Auth logs, response codes.
+* **Pass:** 100% rejection.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L4-RECOV-01] Signing Key Rotation**
+* **Obj:** Verify zero-downtime key rotation.
+* **Pre:** New JWKS key generated.
+* **Steps:** 1. Publish new key. 2. Issue tokens with new key. 3. Validate.
+* **Exp:** Old and new tokens valid during overlap.
+* **Met:** Validation success rate.
+* **Pass:** 100% success, no user logout.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L4-COMP-01] MFA Enforcement**
+* **Obj:** Verify MFA is strictly enforced for privileged actions.
+* **Pre:** User without MFA enabled.
+* **Steps:** 1. Attempt to change billing info.
+* **Exp:** 403 Forbidden, prompt for MFA.
+* **Met:** Action blocked, MFA prompt triggered.
+* **Pass:** 100% block without MFA.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 5: Application Services
+
+**SLO Validation:**
+* **SLI:** API Availability & Business Logic Latency.
+* **SLO:** 99.95% Availability, p99 Latency < 300ms.
+* **Error Budget:** 21.6 mins downtime/month.
+* **Alerts:** 5xx > 0.5% (Page), p99 > 500ms (Ticket).
+
+**Runbook: Cascading Service Failure**
+* **Detection:** Error rates spike across multiple services; latency degrades.
+* **Diagnosis:** Trace analysis shows Service A waiting on Service B.
+* **Mitigation:** Enable circuit breaker for Service B; return fallback/cached data.
+* **Rollback:** Disable circuit breaker when B recovers.
+* **Communication:** "Degraded performance in X feature."
+* **Postmortem:** Implement bulkheading, tune circuit breaker thresholds.
+
+### Test Matrix
+
+**[L5-FUNC-01] Idempotent Resource Creation**
+* **Obj:** Verify duplicate requests don't create duplicate resources.
+* **Pre:** Idempotency key generated.
+* **Steps:** 1. POST with key. 2. POST again with same key.
+* **Exp:** 1st creates (201), 2nd returns cached (200).
+* **Met:** Resource count, response codes.
+* **Pass:** Exactly 1 resource created.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L5-FAIL-01] Database Connection Pool Exhaustion**
+* **Obj:** Verify app fails gracefully when DB pool is full.
+* **Pre:** DB pool maxed out via synthetic load.
+* **Steps:** 1. Send new request.
+* **Exp:** App returns 503 after timeout, doesn't crash/OOM.
+* **Met:** Error rate, app memory, response code.
+* **Pass:** 503 returned, app process survives.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L5-CHAOS-01] Random Pod Termination**
+* **Obj:** Verify K8s handles sudden pod loss without dropping requests.
+* **Pre:** App running with graceful shutdown configured.
+* **Steps:** 1. `kubectl delete pod` during active load.
+* **Exp:** In-flight requests complete; new requests route to other pods.
+* **Met:** Dropped request rate, error rate.
+* **Pass:** 0% dropped requests.
+* **Sev:** SEV-2. **Auto:** Yes (Chaos Mesh).
+
+**[L5-LOAD-01] Black Friday 10x Spike**
+* **Obj:** Verify HPA scales app to handle massive load.
+* **Pre:** Baseline 1k RPS.
+* **Steps:** 1. Ramp to 10k RPS.
+* **Exp:** Pods scale out, latency remains within SLO.
+* **Met:** Pod count, p99 latency, CPU util.
+* **Pass:** p99 < 300ms, CPU < 80%.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L5-SEC-01] Tenant Data Escape (IDOR)**
+* **Obj:** Ensure User A cannot access User B's data via ID manipulation.
+* **Pre:** User A and User B have separate data.
+* **Steps:** 1. User A requests User B's resource ID.
+* **Exp:** 403 Forbidden or 404 Not Found.
+* **Met:** Response code, audit logs.
+* **Pass:** 100% denial.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L5-RECOV-01] Blue/Green Rollback**
+* **Obj:** Verify instant rollback of bad deployment.
+* **Pre:** Bad code deployed to Green.
+* **Steps:** 1. Switch traffic to Blue.
+* **Exp:** Traffic routes to Blue; errors stop.
+* **Met:** Error rate, traffic shift time.
+* **Pass:** Rollback < 30s, errors clear.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L5-COMP-01] PII Masking in Logs**
+* **Obj:** Verify PII is never written to application logs.
+* **Pre:** Log scrubber configured.
+* **Steps:** 1. Send request with SSN/Credit Card in payload. 2. Check logs.
+* **Exp:** Payload masked (e.g., `***-**-1234`).
+* **Met:** Log content, mask hit rate.
+* **Pass:** 100% masking.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 6: AI Inference Layer
+
+**SLO Validation:**
+* **SLI:** Time to First Token (TTFT) & Token Throughput.
+* **SLO:** TTFT p95 < 500ms, Throughput > 1000 tok/s/GPU.
+* **Error Budget:** 5% of requests > 1s TTFT.
+* **Alerts:** TTFT p95 > 1s (Page), GPU OOM rate > 0.1% (Page).
+
+**Runbook: GPU Cluster OOM / Exhaustion**
+* **Detection:** Inference errors spike; GPU memory at 100%.
+* **Diagnosis:** Check queue depth; identify if specific prompt size is causing OOM.
+* **Mitigation:** Route to fallback smaller model; reject oversized prompts.
+* **Rollback:** Restore primary model routing.
+* **Communication:** "AI features experiencing delays."
+* **Postmortem:** Implement strict input token limits, optimize KV cache.
+
+### Test Matrix
+
+**[L6-FUNC-01] Streaming Inference**
+* **Obj:** Verify LLM streams tokens correctly via SSE.
+* **Pre:** Model loaded.
+* **Steps:** 1. POST streaming request. 2. Read SSE stream.
+* **Exp:** Tokens arrive sequentially, final `[DONE]` sent.
+* **Met:** TTFT, tokens/sec, stream completeness.
+* **Pass:** 100% complete streams, TTFT < 500ms.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L6-FAIL-01] Model Provider API Timeout**
+* **Obj:** Verify fallback to secondary provider or cached response.
+* **Pre:** Primary provider simulated as hanging.
+* **Steps:** 1. Send inference request.
+* **Exp:** Circuit breaker opens, routes to secondary/cached.
+* **Met:** Fallback trigger rate, latency.
+* **Pass:** Request succeeds via fallback < 2s.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L6-CHAOS-01] GPU Thermal Throttling**
+* **Obj:** Verify inference degrades gracefully under thermal limits.
+* **Pre:** Inject GPU power limit via NVML.
+* **Steps:** 1. Run continuous inference.
+* **Exp:** Throughput drops, but no crashes; latency increases.
+* **Met:** Tokens/sec, GPU temp, error rate.
+* **Pass:** 0% crashes, latency within 2x SLO.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L6-LOAD-01] Concurrent Streaming Requests**
+* **Obj:** Verify continuous batching handles massive concurrency.
+* **Pre:** vLLM/Triton configured.
+* **Steps:** 1. Send 1000 concurrent streaming requests.
+* **Exp:** Batching optimizes GPU util; no OOM.
+* **Met:** GPU util, TTFT p99, batch size.
+* **Pass:** 0% OOM, TTFT p99 < 2s.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L6-SEC-01] Prompt Injection / Jailbreak**
+* **Obj:** Verify guardrails block malicious prompts.
+* **Pre:** Guardrail model (e.g., LlamaGuard) active.
+* **Steps:** 1. Send DAN/jailbreak prompt.
+* **Exp:** Guardrail blocks, returns safe refusal message.
+* **Met:** Block rate, guardrail latency.
+* **Pass:** 100% block on known injection patterns.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L6-RECOV-01] Model Weight Corruption**
+* **Obj:** Verify system recovers from corrupted model weights.
+* **Pre:** Corrupt 1% of model shard files.
+* **Steps:** 1. Attempt to load model.
+* **Exp:** Load fails, alerts, routes to previous healthy version.
+* **Met:** Load success rate, fallback time.
+* **Pass:** Fallback < 2 mins, 0% bad inference.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L6-COMP-01] PII Redaction in Inference**
+* **Obj:** Ensure PII in prompts is redacted before logging/billing.
+* **Pre:** PII detection middleware active.
+* **Steps:** 1. Send prompt with phone number. 2. Check audit logs.
+* **Exp:** Phone number replaced with `[REDACTED]`.
+* **Met:** Redaction hit rate, log content.
+* **Pass:** 100% redaction.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 7: Queue & Async Processing
+
+**SLO Validation:**
+* **SLI:** Consumer Lag & Processing Success Rate.
+* **SLO:** Lag < 1000 messages, Success > 99.9%.
+* **Error Budget:** 0.1% failure rate.
+* **Alerts:** Lag > 5000 (Page), DLQ depth > 10 (Ticket).
+
+**Runbook: Queue Backlog / Consumer Lag**
+* **Detection:** Consumer lag metric exceeds threshold; processing latency spikes.
+* **Diagnosis:** Check consumer health; identify slow processing logic or downstream dependency.
+* **Mitigation:** Scale consumer replicas; if downstream is slow, enable circuit breaker.
+* **Rollback:** Scale down consumers when lag clears.
+* **Communication:** "Background processing delayed."
+* **Postmortem:** Optimize consumer logic, implement batch processing.
+
+### Test Matrix
+
+**[L7-FUNC-01] At-Least-Once Delivery**
+* **Obj:** Verify messages are processed even if consumer crashes.
+* **Pre:** Consumer processes message, then crashes before ACK.
+* **Steps:** 1. Publish message. 2. Consumer reads, crashes. 3. Restart consumer.
+* **Exp:** Message reappears in queue, processed on restart.
+* **Met:** Message count, DLQ depth.
+* **Pass:** 100% message processed, 0 lost.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L7-FAIL-01] Broker Unreachable**
+* **Obj:** Verify producers handle broker failure gracefully.
+* **Pre:** Block network to Kafka/SQS.
+* **Steps:** 1. Attempt to publish message.
+* **Exp:** Producer buffers locally or returns error; app doesn't crash.
+* **Met:** Error rate, local buffer size.
+* **Pass:** App survives, messages buffered or safely failed.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L7-CHAOS-01] Poison Pill Message**
+* **Obj:** Verify malformed message goes to DLQ, not crashing consumer.
+* **Pre:** Publish invalid JSON to queue.
+* **Steps:** 1. Consumer attempts to process.
+* **Exp:** Deserialization fails, message sent to DLQ after N retries.
+* **Met:** DLQ depth, consumer crash rate.
+* **Pass:** 0 consumer crashes, 100% DLQ routing.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L7-LOAD-01] Massive Backlog Spike**
+* **Obj:** Verify consumers scale to clear massive backlog.
+* **Pre:** 1M messages in queue.
+* **Steps:** 1. Start consumers.
+* **Exp:** Consumers scale to max, lag decreases steadily.
+* **Met:** Lag, consumer count, processing RPS.
+* **Pass:** Lag clears within 1 hour, no OOM.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L7-SEC-01] Message Tampering**
+* **Obj:** Ensure consumers reject messages with invalid signatures.
+* **Pre:** Producer signs payload with HMAC.
+* **Steps:** 1. Modify payload in transit. 2. Consumer reads.
+* **Exp:** Signature mismatch, message rejected/DLQ.
+* **Met:** Rejection rate, DLQ depth.
+* **Pass:** 100% rejection of tampered messages.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L7-RECOV-01] DLQ Replay**
+* **Obj:** Verify DLQ messages can be fixed and reprocessed.
+* **Pre:** 10 messages in DLQ due to transient bug.
+* **Steps:** 1. Fix bug. 2. Trigger DLQ replay tool.
+* **Exp:** Messages re-queued and processed successfully.
+* **Met:** DLQ depth, success rate.
+* **Pass:** 100% processed, DLQ empty.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L7-COMP-01] Event Sourcing Audit**
+* **Obj:** Verify all state changes emit immutable audit events.
+* **Pre:** Audit event listener active.
+* **Steps:** 1. Perform 5 state changes. 2. Query event store.
+* **Exp:** 5 immutable events recorded with timestamps.
+* **Met:** Event count, immutability.
+* **Pass:** 100% capture, 0 modifications allowed.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 8: Primary Database
+
+**SLO Validation:**
+* **SLI:** Query Latency & Replication Lag.
+* **SLO:** p99 Query < 50ms, Replication Lag < 1s.
+* **Error Budget:** 5% of queries > 100ms.
+* **Alerts:** Replication lag > 5s (Page), Connection pool > 90% (Ticket).
+
+**Runbook: Primary Database Corruption / Failover**
+* **Detection:** Primary health checks fail; replication lag spikes.
+* **Diagnosis:** Check disk space, IOPS, and DB logs for corruption.
+* **Mitigation:** Trigger automated failover to read replica; promote to primary.
+* **Rollback:** Rebuild old primary as replica.
+* **Communication:** "Database failover in progress, brief write unavailability."
+* **Postmortem:** Analyze corruption cause, test PITR restore.
+
+### Test Matrix
+
+**[L8-FUNC-01] ACID Transactions**
+* **Obj:** Verify concurrent updates maintain consistency.
+* **Pre:** Two concurrent transactions updating same row.
+* **Steps:** 1. Tx A begins, reads. 2. Tx B updates, commits. 3. Tx A updates.
+* **Exp:** One succeeds, one retries/rolls back. Final state consistent.
+* **Met:** Deadlock rate, final row state.
+* **Pass:** 0 data corruption, consistent final state.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L8-FAIL-01] Primary Node Crash**
+* **Obj:** Verify automatic failover to replica.
+* **Pre:** Patroni/RDS Multi-AZ configured.
+* **Steps:** 1. Kill primary process.
+* **Exp:** Replica promoted; app reconnects via cluster endpoint.
+* **Met:** Downtime duration, data loss (RPO).
+* **Pass:** Failover < 30s, RPO = 0 (sync replication).
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L8-CHAOS-01] Network Flap (Packet Loss)**
+* **Obj:** Verify DB handles transient network issues without dropping connections.
+* **Pre:** Inject 5% packet loss between app and DB.
+* **Steps:** 1. Run continuous queries.
+* **Exp:** Queries retry transparently; connection pool recovers.
+* **Met:** Query error rate, connection pool churn.
+* **Pass:** < 1% error rate, 0 pool exhaustion.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L8-LOAD-01] Write Saturation**
+* **Obj:** Verify DB handles max IOPS without crashing.
+* **Pre:** Load generator targeting heavy writes.
+* **Steps:** 1. Ramp writes to 10x expected peak.
+* **Exp:** Latency increases, but DB remains up; queueing occurs.
+* **Met:** IOPS, latency p99, CPU.
+* **Pass:** 0 crashes, latency < 5s.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L8-SEC-01] Row-Level Security (RLS) Bypass**
+* **Obj:** Ensure app user cannot bypass RLS to see other tenants.
+* **Pre:** RLS policy set on `tenant_id`.
+* **Steps:** 1. App user attempts `SELECT * FROM table` without setting session var.
+* **Exp:** Returns 0 rows or error.
+* **Met:** Row count returned.
+* **Pass:** 0 rows returned.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L8-RECOV-01] Point-in-Time Recovery (PITR)**
+* **Obj:** Verify restore to specific second before data deletion.
+* **Pre:** Accidental `DELETE` executed.
+* **Steps:** 1. Note timestamp. 2. Restore DB to timestamp - 1 min.
+* **Exp:** Data is present in restored DB.
+* **Met:** RTO, RPO, data integrity.
+* **Pass:** Restore < 15 mins, 100% data intact.
+* **Sev:** SEV-1. **Auto:** Partial (Manual trigger).
+
+**[L8-COMP-01] Column-Level Encryption**
+* **Obj:** Verify PII columns are encrypted at rest in DB files.
+* **Pre:** TDE and column encryption enabled.
+* **Steps:** 1. Dump raw DB data files. 2. Search for PII string.
+* **Exp:** PII not found in plaintext in files.
+* **Met:** Encryption status, raw file search.
+* **Pass:** 100% encrypted at rest.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 9: Cache Layer
+
+**SLO Validation:**
+* **SLI:** Cache Hit Ratio & Latency.
+* **SLO:** Hit Ratio > 90%, Latency p99 < 5ms.
+* **Error Budget:** 10% miss rate allowed.
+* **Alerts:** Hit ratio < 70% (Ticket), Latency > 20ms (Page).
+
+**Runbook: Cache Stampede / Thundering Herd**
+* **Detection:** DB CPU spikes; cache hit ratio drops to 0%; latency spikes.
+* **Diagnosis:** Identify expired high-traffic cache key.
+* **Mitigation:** Enable request coalescing; manually pre-warm key.
+* **Rollback:** N/A.
+* **Communication:** "Elevated latency due to cache miss."
+* **Postmortem:** Implement stale-while-revalidate, tune TTLs.
+
+### Test Matrix
+
+**[L9-FUNC-01] TTL Expiration & Eviction**
+* **Obj:** Verify keys expire correctly and LRU eviction works.
+* **Pre:** Key set with 5s TTL.
+* **Steps:** 1. GET key (hit). 2. Wait 6s. 3. GET key.
+* **Exp:** 1st hit, 2nd miss.
+* **Met:** Hit/miss ratio, memory usage.
+* **Pass:** 100% correct TTL enforcement.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L9-FAIL-01] Redis Node Crash**
+* **Obj:** Verify cluster handles node loss without total outage.
+* **Pre:** Redis Cluster with 3 masters, 3 replicas.
+* **Steps:** 1. Kill 1 master.
+* **Exp:** Replica promoted; brief timeout, then success.
+* **Met:** Error rate, recovery time.
+* **Pass:** Error rate < 1% during failover, recovery < 10s.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L9-CHAOS-01] Network Partition (Split Brain)**
+* **Obj:** Verify cluster prevents split-brain data divergence.
+* **Pre:** Partition network between 2 Redis nodes.
+* **Steps:** 1. Write to node A. 2. Write to node B. 3. Heal partition.
+* **Exp:** Quorum maintained; minority side rejects writes.
+* **Met:** Write success rate, data consistency.
+* **Pass:** 0 data divergence, minority rejects writes.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L9-LOAD-01] Thundering Herd (Cache Miss)**
+* **Obj:** Verify app handles 10k simultaneous cache misses.
+* **Pre:** Cache empty. 10k clients request same key.
+* **Steps:** 1. Fire 10k requests.
+* **Exp:** App request coalescing ensures only 1 DB query.
+* **Met:** DB QPS, app latency.
+* **Pass:** DB QPS = 1, app p99 < 500ms.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L9-SEC-01] Cache Poisoning via CRLF**
+* **Obj:** Ensure cache keys cannot be manipulated to poison other keys.
+* **Pre:** App constructs cache keys from user input.
+* **Steps:** 1. Input key with `\r\nSet-Cookie: malicious`.
+* **Exp:** Input sanitized; key stored safely.
+* **Met:** Cache key content, response headers.
+* **Pass:** 100% sanitization, no header injection.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L9-RECOV-01] Cache Warm-up**
+* **Obj:** Verify system recovers performance after full cache flush.
+* **Pre:** Cache flushed.
+* **Steps:** 1. Run background warm-up job for top 1000 keys.
+* **Exp:** Hit ratio returns to > 80% within 5 mins.
+* **Met:** Hit ratio, DB load.
+* **Pass:** Hit ratio > 80%, DB load normalized.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L9-COMP-01] Session Data Encryption**
+* **Obj:** Verify user sessions in cache are encrypted.
+* **Pre:** Redis encryption at rest and in transit.
+* **Steps:** 1. Dump RDB file. 2. Search for session token.
+* **Exp:** Token not found in plaintext.
+* **Met:** RDB content.
+* **Pass:** 100% encrypted.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 10: Search & Vector Layer
+
+**SLO Validation:**
+* **SLI:** Search Latency & Vector Recall.
+* **SLO:** p99 Latency < 200ms, Recall@10 > 95%.
+* **Error Budget:** 5% of queries > 500ms.
+* **Alerts:** Latency > 500ms (Page), Cluster status Yellow/Red (Page).
+
+**Runbook: Vector Index Degradation**
+* **Detection:** Search latency spikes; recall drops; cluster status yellow.
+* **Diagnosis:** Check shard allocation, disk space, and HNSW graph integrity.
+* **Mitigation:** Reallocate shards; trigger index rebuild from primary DB.
+* **Rollback:** Revert to previous index snapshot.
+* **Communication:** "Search performance degraded."
+* **Postmortem:** Optimize indexing pipeline, tune HNSW parameters.
+
+### Test Matrix
+
+**[L10-FUNC-01] Hybrid Search (Keyword + Vector)**
+* **Obj:** Verify combined search returns relevant results.
+* **Pre:** Index populated with text and embeddings.
+* **Steps:** 1. Query with semantic meaning and exact keyword.
+* **Exp:** Results satisfy both constraints.
+* **Met:** Relevance score, latency.
+* **Pass:** Top 5 results contain exact keyword and semantic match.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L10-FAIL-01] Search Node OOM**
+* **Obj:** Verify cluster handles node crash during heavy query.
+* **Pre:** Node running out of memory.
+* **Steps:** 1. Send complex aggregation query.
+* **Exp:** Node crashes, query fails over to replica, cluster recovers.
+* **Met:** Error rate, recovery time.
+* **Pass:** Query fails gracefully, cluster green < 2 mins.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L10-CHAOS-01] Shard Rebalancing Under Load**
+* **Obj:** Verify search remains available during shard moves.
+* **Pre:** Add new node to cluster.
+* **Steps:** 1. Trigger rebalance while sending queries.
+* **Exp:** Queries route to available shards; slight latency bump.
+* **Met:** Latency p99, error rate.
+* **Pass:** 0 errors, latency < 2x baseline.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L10-LOAD-01] Mass Indexing (1M Documents)**
+* **Obj:** Verify index handles massive bulk insert without locking.
+* **Pre:** 1M documents ready.
+* **Steps:** 1. Bulk index via API. 2. Query concurrently.
+* **Exp:** Indexing completes; queries remain fast.
+* **Met:** Indexing throughput, query latency.
+* **Pass:** Indexing > 10k docs/s, query p99 < 200ms.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L10-SEC-01] Tenant Data Leak via Search**
+* **Obj:** Ensure Tenant A cannot search Tenant B's vectors.
+* **Pre:** Multi-tenant index with metadata filtering.
+* **Steps:** 1. Tenant A queries without tenant filter.
+* **Exp:** Returns 0 results or error.
+* **Met:** Result count, audit logs.
+* **Pass:** 0 cross-tenant results.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L10-RECOV-01] Full Index Rebuild**
+* **Obj:** Verify index can be rebuilt from primary DB.
+* **Pre:** Index corrupted.
+* **Steps:** 1. Drop index. 2. Run rebuild job.
+* **Exp:** Index recreated, data matches DB.
+* **Met:** Rebuild time, data count.
+* **Pass:** Rebuild < 1 hour, 100% data parity.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L10-COMP-01] Right to be Forgotten (Deletion)**
+* **Obj:** Verify user data is completely purged from search index.
+* **Pre:** User requests deletion.
+* **Steps:** 1. Delete user in DB. 2. Trigger index sync. 3. Search for user data.
+* **Exp:** 0 results in search.
+* **Met:** Search results, index size.
+* **Pass:** 100% deletion within 24h.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 11: Object Storage
+
+**SLO Validation:**
+* **SLI:** Upload Success Rate & First Byte Latency.
+* **SLO:** 99.99% Success, First Byte < 100ms.
+* **Error Budget:** 4.3 mins downtime.
+* **Alerts:** 5xx rate > 0.1% (Page), Latency > 500ms (Ticket).
+
+**Runbook: Storage Bucket Inaccessibility**
+* **Detection:** Uploads/downloads failing; 503 errors.
+* **Diagnosis:** Check bucket policy, IAM roles, and regional status.
+* **Mitigation:** Switch to cross-region replica bucket; update DNS/CDN.
+* **Rollback:** Restore primary bucket access.
+* **Communication:** "File uploads temporarily unavailable."
+* **Postmortem:** Review IAM policies, implement multi-region routing.
+
+### Test Matrix
+
+**[L11-FUNC-01] Multipart Upload & Resume**
+* **Obj:** Verify large files upload correctly and resume on failure.
+* **Pre:** 5GB file, network unstable.
+* **Steps:** 1. Start upload. 2. Kill network at 50%. 3. Resume.
+* **Exp:** Upload completes from 50%; final file intact.
+* **Met:** Upload time, file checksum.
+* **Pass:** 100% checksum match, resume works.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L11-FAIL-01] Region Unreachable**
+* **Obj:** Verify fallback to secondary region storage.
+* **Pre:** Primary region simulated down.
+* **Steps:** 1. Attempt upload.
+* **Exp:** SDK/CDN routes to secondary region.
+* **Met:** Success rate, latency.
+* **Pass:** >99% success, latency < 2x.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L11-CHAOS-01] Network Bandwidth Throttle**
+* **Obj:** Verify upload handles severe bandwidth constraints.
+* **Pre:** Throttle network to 1Mbps.
+* **Steps:** 1. Upload 100MB file.
+* **Exp:** Upload succeeds, takes longer, no timeout.
+* **Met:** Upload time, error rate.
+* **Pass:** 100% success, no timeouts.
+* **Sev:** SEV-3. **Auto:** Yes.
+
+**[L11-LOAD-01] Mass Concurrent Uploads**
+* **Obj:** Verify storage handles massive concurrent writes.
+* **Pre:** 10k clients uploading 10MB files.
+* **Steps:** 1. Fire all uploads simultaneously.
+* **Exp:** Storage scales, no 503s.
+* **Met:** RPS, error rate.
+* **Pass:** 0% 503s, all files stored.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L11-SEC-01] Pre-signed URL Expiration & Scope**
+* **Obj:** Ensure pre-signed URLs expire and restrict access.
+* **Pre:** URL generated for 1 hour, GET only.
+* **Steps:** 1. Use URL immediately (GET). 2. Use for PUT. 3. Wait 2 hours, use GET.
+* **Exp:** 1st 200, 2nd 403, 3rd 403.
+* **Met:** Response codes.
+* **Pass:** 100% correct access control.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L11-RECOV-01] Cross-Region Replication Sync**
+* **Obj:** Verify data replicates to secondary region.
+* **Pre:** CRR enabled.
+* **Steps:** 1. Upload file to primary. 2. Check secondary.
+* **Exp:** File appears in secondary within SLA.
+* **Met:** Replication lag.
+* **Pass:** Lag < 15 mins.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L11-COMP-01] WORM / Object Lock**
+* **Obj:** Verify compliance records cannot be deleted before retention.
+* **Pre:** Object lock set for 7 years.
+* **Steps:** 1. Attempt to delete object.
+* **Exp:** 403 Access Denied.
+* **Met:** Deletion success rate.
+* **Pass:** 100% denial.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 12: Observability Platform
+
+**SLO Validation:**
+* **SLI:** Ingestion Lag & Query Latency.
+* **SLO:** Ingestion Lag < 10s, Query p99 < 2s.
+* **Error Budget:** 1% dropped logs.
+* **Alerts:** Ingestion lag > 60s (Page), Query timeout > 5s (Ticket).
+
+**Runbook: Observability Pipeline Backpressure**
+* **Detection:** Log ingestion lag spikes; Kafka consumer lag grows.
+* **Diagnosis:** Check storage write limits; identify log flood from specific service.
+* **Mitigation:** Enable log sampling/dropping for non-critical services; scale storage.
+* **Rollback:** Restore full ingestion.
+* **Communication:** "Monitoring data delayed."
+* **Postmortem:** Implement dynamic sampling, tune log levels.
+
+### Test Matrix
+
+**[L12-FUNC-01] Trace Correlation**
+* **Obj:** Verify traces link across all services.
+* **Pre:** OTel configured.
+* **Steps:** 1. Trigger multi-service request. 2. View trace.
+* **Exp:** Single trace shows all spans, correct parent/child.
+* **Met:** Trace completeness, span count.
+* **Pass:** 100% spans linked.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L12-FAIL-01] Metrics Storage Full**
+* **Obj:** Verify system handles storage exhaustion gracefully.
+* **Pre:** Fill metrics disk to 95%.
+* **Steps:** 1. Send new metrics.
+* **Exp:** Oldest data dropped (retention policy), new data accepted.
+* **Met:** Ingestion rate, disk usage.
+* **Pass:** 100% new data ingested, no crash.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L12-CHAOS-01] Log Flood (Infinite Loop)**
+* **Obj:** Verify pipeline survives massive log spike without crashing.
+* **Pre:** App configured to log in infinite loop.
+* **Steps:** 1. Trigger loop. 2. Monitor pipeline.
+* **Exp:** Pipeline applies backpressure, drops excess, survives.
+* **Met:** Ingestion rate, pipeline CPU.
+* **Pass:** Pipeline stays up, critical logs retained.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L12-LOAD-01] High-Cardinality Metric Explosion**
+* **Obj:** Verify metrics DB handles high cardinality without OOM.
+* **Pre:** Metric with user_id label (1M unique values).
+* **Steps:** 1. Query metric.
+* **Exp:** Query times out or returns partial; DB doesn't crash.
+* **Met:** Query latency, DB memory.
+* **Pass:** 0 DB crashes, graceful timeout.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L12-SEC-01] Log Injection (CRLF)**
+* **Obj:** Ensure logs cannot be forged via CRLF injection.
+* **Pre:** App logs user input.
+* **Steps:** 1. Input contains `\nFAKE LOG ENTRY`.
+* **Exp:** Input escaped/sanitized; single log line.
+* **Met:** Log content.
+* **Pass:** 100% sanitization.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L12-RECOV-01] Dashboard Restore**
+* **Obj:** Verify dashboards can be restored from Git.
+* **Pre:** Dashboard deleted.
+* **Steps:** 1. Run GitOps sync.
+* **Exp:** Dashboard recreated.
+* **Met:** Dashboard count.
+* **Pass:** 100% restored.
+* **Sev:** SEV-3. **Auto:** Yes.
+
+**[L12-COMP-01] Audit Log Retention**
+* **Obj:** Verify audit logs are retained for 7 years.
+* **Pre:** Lifecycle policy set.
+* **Steps:** 1. Generate log. 2. Fast-forward time (simulated).
+* **Exp:** Log moves to cold storage, not deleted.
+* **Met:** Storage tier, log existence.
+* **Pass:** 100% retention compliance.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 13: CI/CD Platform
+
+**SLO Validation:**
+* **SLI:** Pipeline Success Rate & Deploy Time.
+* **SLO:** Success > 98%, Deploy < 10 mins.
+* **Error Budget:** 2% failure rate.
+* **Alerts:** Success < 90% (Page), Deploy > 20 mins (Ticket).
+
+**Runbook: CI/CD Pipeline Compromise**
+* **Detection:** Unexpected artifact published; runner behavior anomalous.
+* **Diagnosis:** Check runner logs, verify image signatures.
+* **Mitigation:** Halt all deployments; revoke runner credentials; isolate network.
+* **Rollback:** Rebuild runners from trusted golden image.
+* **Communication:** "Deployments paused for security investigation."
+* **Postmortem:** Forensic analysis, implement stricter runner isolation.
+
+### Test Matrix
+
+**[L13-FUNC-01] Build and Push Signed Image**
+* **Obj:** Verify image is built, scanned, and signed.
+* **Pre:** Pipeline configured with Cosign.
+* **Steps:** 1. Push code. 2. Pipeline runs.
+* **Exp:** Image pushed to registry, signature attached.
+* **Met:** Image signature, scan results.
+* **Pass:** 100% signed, 0 critical CVEs.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L13-FAIL-01] Runner Node Crash**
+* **Obj:** Verify pipeline resumes or fails cleanly on runner loss.
+* **Pre:** Job running on ephemeral runner.
+* **Steps:** 1. Kill runner VM.
+* **Exp:** Job fails; retry mechanism picks it up on new runner.
+* **Met:** Job success rate, retry count.
+* **Pass:** Job succeeds on retry.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L13-CHAOS-01] Artifact Registry Outage**
+* **Obj:** Verify pipeline handles registry failure.
+* **Pre:** Block network to registry.
+* **Steps:** 1. Trigger pipeline.
+* **Exp:** Pipeline fails at push step; clear error message.
+* **Met:** Pipeline status, error log.
+* **Pass:** Clean failure, no hanging jobs.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L13-LOAD-01] Concurrent PR Storm**
+* **Obj:** Verify CI scales to handle 100 concurrent PRs.
+* **Pre:** 100 PRs opened.
+* **Steps:** 1. Trigger all pipelines.
+* **Exp:** Runners auto-scale; queues process efficiently.
+* **Met:** Queue time, runner count.
+* **Pass:** Queue time < 5 mins, 0 dropped jobs.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L13-SEC-01] Supply Chain Injection (Dependency Confusion)**
+* **Obj:** Ensure pipeline blocks malicious external dependencies.
+* **Pre:** Private registry configured; public registry blocked for internal packages.
+* **Steps:** 1. Add malicious public package with same name.
+* **Exp:** Build fails; dependency resolution blocked.
+* **Met:** Build status, dependency logs.
+* **Pass:** 100% block.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L13-RECOV-01] State Store Restore**
+* **Obj:** Verify Terraform state can be restored.
+* **Pre:** State file corrupted.
+* **Steps:** 1. Restore from S3 versioning.
+* **Exp:** State matches infrastructure.
+* **Met:** `terraform plan` output.
+* **Pass:** 0 changes detected.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L13-COMP-01] SBOM Generation**
+* **Obj:** Verify SBOM is generated and attached to release.
+* **Pre:** Syft/Trivy configured.
+* **Steps:** 1. Build release.
+* **Exp:** SBOM (CycloneDX) attached to GitHub release.
+* **Met:** SBOM presence, component count.
+* **Pass:** 100% generation.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+---
+
+## Layer 14: Internal Operations Platform
+
+**SLO Validation:**
+* **SLI:** Admin UI Availability & Action Latency.
+* **SLO:** 99.9% Availability, Action Latency < 500ms.
+* **Error Budget:** 43 mins downtime/month.
+* **Alerts:** UI 5xx > 1% (Page), Latency > 2s (Ticket).
+
+**Runbook: Internal Tooling Data Breach**
+* **Detection:** Anomalous admin activity; SIEM alert on bulk data export.
+* **Diagnosis:** Identify compromised staff account; trace actions.
+* **Mitigation:** Revoke session; disable account; isolate admin DB.
+* **Rollback:** N/A (Security incident).
+* **Communication:** Internal legal/security notification.
+* **Postmortem:** Review JIT access, enforce stricter MFA.
+
+### Test Matrix
+
+**[L14-FUNC-01] Tenant Impersonation**
+* **Obj:** Verify staff can impersonate tenant with audit logging.
+* **Pre:** Staff user with 'Support' role.
+* **Steps:** 1. Click "Impersonate". 2. Perform action.
+* **Exp:** Action executed as tenant; audit log shows staff ID.
+* **Met:** Audit log content, action success.
+* **Pass:** 100% audit capture.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L14-FAIL-01] App DB Unreachable**
+* **Obj:** Verify admin UI fails gracefully if DB down.
+* **Pre:** Block admin DB.
+* **Steps:** 1. Load admin dashboard.
+* **Exp:** UI shows error banner; doesn't crash.
+* **Met:** UI status, error rate.
+* **Pass:** UI loads, shows error, 0 500s.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L14-CHAOS-01] Session Store Drop**
+* **Obj:** Verify staff are logged out securely if session store fails.
+* **Pre:** Redis session store killed.
+* **Steps:** 1. Staff performs action.
+* **Exp:** Redirected to login.
+* **Met:** Auth status.
+* **Pass:** 100% forced re-auth.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L14-LOAD-01] Bulk Data Export**
+* **Obj:** Verify large exports don't OOM the admin service.
+* **Pre:** Export 1M rows.
+* **Steps:** 1. Trigger export.
+* **Exp:** Streams to S3; admin UI remains responsive.
+* **Met:** Memory usage, UI latency.
+* **Pass:** UI p99 < 500ms, 0 OOM.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L14-SEC-01] Staff Privilege Escalation**
+* **Obj:** Ensure Support staff cannot elevate to Admin.
+* **Pre:** Support user attempts to change own role.
+* **Steps:** 1. API call to update role.
+* **Exp:** 403 Forbidden.
+* **Met:** Response code.
+* **Pass:** 100% denial.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L14-RECOV-01] Config Reset**
+* **Obj:** Verify bad admin config can be reset.
+* **Pre:** Bad feature flag deployed.
+* **Steps:** 1. Revert in Git. 2. Sync.
+* **Exp:** Config reverts.
+* **Met:** Config state.
+* **Pass:** Revert < 1 min.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L14-COMP-01] Audit Log Immutability**
+* **Obj:** Verify admin actions cannot be deleted from audit log.
+* **Pre:** Append-only audit table.
+* **Steps:** 1. Attempt `DELETE FROM audit_logs`.
+* **Exp:** Command fails; DB role lacks permissions.
+* **Met:** DB error.
+* **Pass:** 100% denial.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+---
+
+## Layer 15: Governance & Compliance
+
+**SLO Validation:**
+* **SLI:** Policy Evaluation Latency & Audit Event Delivery.
+* **SLO:** Policy Eval < 100ms, Audit Delivery 100%.
+* **Error Budget:** 0% audit loss.
+* **Alerts:** Policy eval > 500ms (Ticket), Audit drop > 0 (Page).
+
+**Runbook: Compliance Audit Failure / Data Breach**
+* **Detection:** SIEM detects unauthorized data access; legal notification.
+* **Diagnosis:** Identify scope of breach; affected tenants.
+* **Mitigation:** Isolate affected systems; revoke compromised credentials.
+* **Rollback:** N/A.
+* **Communication:** Legal/PR draft notifications within 72h (GDPR).
+* **Postmortem:** Full forensic review, policy updates.
+
+### Test Matrix
+
+**[L15-FUNC-01] OPA Policy Evaluation**
+* **Obj:** Verify OPA correctly evaluates ABAC policies.
+* **Pre:** Policy: "Deny delete if resource is protected".
+* **Steps:** 1. Send delete request for protected resource.
+* **Exp:** OPA returns `allow: false`.
+* **Met:** Decision result, latency.
+* **Pass:** 100% correct decision.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L15-FAIL-01] Policy Engine Unreachable**
+* **Obj:** Verify system fails closed if OPA is down.
+* **Pre:** Block network to OPA.
+* **Steps:** 1. Send request requiring authz.
+* **Exp:** Request denied (fail closed).
+* **Met:** Response code, error rate.
+* **Pass:** 100% denial.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L15-CHAOS-01] Clock Skew on Audit Logs**
+* **Obj:** Verify audit logs maintain correct chronological order.
+* **Pre:** App server clock skewed -5 mins.
+* **Steps:** 1. Generate events. 2. Check audit log.
+* **Exp:** Events use NTP-synced time or server time consistently.
+* **Met:** Event timestamps.
+* **Pass:** 0 out-of-order events.
+* **Sev:** SEV-2. **Auto:** Yes.
+
+**[L15-LOAD-01] Audit Event Flood**
+* **Obj:** Verify audit pipeline handles massive event volume.
+* **Pre:** Generate 100k events/sec.
+* **Steps:** 1. Fire events.
+* **Exp:** Pipeline scales; 0 drops.
+* **Met:** Ingestion rate, drop rate.
+* **Pass:** 0 drops, lag < 10s.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L15-SEC-01] Policy Bypass via API Versioning**
+* **Obj:** Ensure old API versions enforce new compliance policies.
+* **Pre:** New policy requires MFA for v1 and v2.
+* **Steps:** 1. Call v1 without MFA.
+* **Exp:** Denied.
+* **Met:** Response code.
+* **Pass:** 100% denial.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L15-RECOV-01] Policy Rollback**
+* **Obj:** Verify bad policy can be reverted instantly.
+* **Pre:** Policy blocking all traffic deployed.
+* **Steps:** 1. Revert policy in Git. 2. Sync OPA.
+* **Exp:** Traffic flows.
+* **Met:** Error rate.
+* **Pass:** Revert < 30s, errors clear.
+* **Sev:** SEV-1. **Auto:** Yes.
+
+**[L15-COMP-01] GDPR Data Subject Request (DSAR)**
+* **Obj:** Verify complete data deletion across all systems.
+* **Pre:** User requests deletion.
+* **Steps:** 1. Trigger DSAR workflow. 2. Verify DB, Search, S3, Logs.
+* **Exp:** Data purged from all active stores; logs anonymized.
+* **Met:** Data presence in all stores.
+* **Pass:** 100% deletion within 30 days.
+* **Sev:** SEV-1. **Auto:** Partial (Verification manual).

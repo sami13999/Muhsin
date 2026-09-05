@@ -1,0 +1,1511 @@
+# Production-Grade AI SaaS Platform: A Principal Architect's Reference
+
+> "A prototype proves the idea is possible. A production platform proves it is survivable, auditable, and operable at scale — under adversarial conditions, on a Tuesday at 3 AM, during a regional outage, while the CFO is asking why the GPU bill tripled."
+
+This document describes what a truly production-ready AI SaaS platform looks like. It is opinionated, layered, and designed for long-term operational excellence rather than MVP speed.
+
+---
+
+# Part 1 — Architecture Layers
+
+A mature AI SaaS platform at enterprise scale evolves into roughly **14 distinct layers**. The number is not dogma; it reflects real separation of concerns across trust boundaries, scaling characteristics, and ownership models. Collapsing layers prematurely creates blast radius; over-fragmenting creates operational overhead.
+
+## Layer 1 — Edge & CDN
+
+**Purpose:** Terminate user connections close to the customer, cache static and semantically-cacheable dynamic content, absorb volumetric attacks.
+
+**Responsibilities:**
+
+* TLS termination (modern cipher suites, OCSP stapling)
+* Static asset caching (JS bundles, model artifacts, images, embeddings)
+* Geographic routing and latency-based routing
+* Bot mitigation and rate shaping
+* Worker-tier compute (Cloudflare Workers, Fastly Compute) for edge logic
+
+**Typical technologies:** Cloudflare, Fastly, Akamai, AWS CloudFront + Lambda@Edge.
+
+**Scaling concerns:** Cache hit ratio is the dominant metric. Invalidation strategy matters more than capacity. Origin shield reduces origin load.
+
+**Failure modes:** Edge PoP failure (handled via anycast reroute), cache poisoning, stale content due to bad cache keys, TLS misconfiguration causing global outage.
+
+**Security considerations:** WAF rules, signed URLs for protected content, geo-blocking, TLS version enforcement, HSTS preload, certificate pinning for mobile.
+
+**Monitoring:** Cache hit ratio, origin shield traffic, TLS handshake latency, WAF block rates, edge error rates by PoP.
+
+**Disaster recovery:** Multi-CDN strategy for tier-1 customers (Cloudflare primary, Fastly failover via DNS).
+
+**Ownership:** Platform/Edge team.
+
+---
+
+## Layer 2 — DNS & Global Traffic Routing
+
+**Purpose:** Authoritative name resolution, geo-routing, health-checked failover, traffic shifting for canaries.
+
+**Responsibilities:**
+
+* Authoritative DNS
+* Weighted/latency/geo-based routing policies
+* Health-checked DNS failover between regions
+* Anycast for low-latency resolution
+
+**Typical technologies:** Route53, NS1, Cloudflare DNS, UltraDNS.
+
+**Failure modes:** DNS provider outage (mitigated by multi-provider DNS with split horizon), TTL-induced propagation delay, misconfigured health checks causing failover flapping.
+
+**Security:** DNSSEC, CAA records, registrar lock, MFA on registrar.
+
+**Monitoring:** Resolution latency from multiple vantage points (Catchpoint, ThousandEyes), DNS query volume, NXDOMAIN rates.
+
+**Ownership:** Platform/Network team.
+
+---
+
+## Layer 3 — WAF, DDoS & Bot Defense
+
+**Purpose:** L3/L7 attack mitigation, OWASP Top 10 protection, bot/abuse detection, API abuse prevention.
+
+**Responsibilities:**
+
+* Signature and behavioral rules
+* Rate limiting (token bucket per identity, per IP, per tenant)
+* Challenge mechanisms (JS challenge, CAPTCHA, proof-of-work)
+* Signal sharing with abuse/fraud systems
+
+**Typical technologies:** Cloudflare WAF, AWS WAF + Shield Advanced, Signal Sciences, Datadome, HUMAN.
+
+**Failure modes:** False positives blocking legitimate customers, rule misconfiguration causing 403 storms, bypass via header manipulation.
+
+**Security:** Custom rule review board, change-controlled managed rules, alerting on rule volume changes.
+
+**Monitoring:** Blocked requests by rule, challenge solve rates, false positive reports from CS, latency overhead.
+
+**Ownership:** Security Engineering.
+
+---
+
+## Layer 4 — API Gateway & BFF
+
+**Purpose:** Single ingress for API traffic, protocol translation, request shaping, tenant routing.
+
+**Responsibilities:**
+
+* Authentication handoff to Identity Layer
+* Tenant context extraction and routing
+* Request/response transformation
+* Quota enforcement (per-tenant, per-API, per-model)
+* gRPC ↔ REST translation, GraphQL gateway
+* Request ID injection and trace propagation
+
+**Typical technologies:** Kong, Envoy + Gloo, AWS API Gateway, Apigee, GraphQL gateways (Apollo Router).
+
+**Failure modes:** Plugin crashes, configuration drift, quota cache divergence, slow consumer blocking gateway threads.
+
+**Security:** Schema validation, payload size limits, mTLS to upstreams, JWT verification with rotating keys.
+
+**Monitoring:** p50/p95/p99 latency per route, 4xx/5xx rates, JWT validation failures, quota denials.
+
+**Ownership:** Platform Engineering.
+
+---
+
+## Layer 5 — Identity, Access & Tenant Context
+
+**Purpose:** Authenticate principals (users, services, agents), authorize actions, and propagate tenant identity end-to-end.
+
+**Responsibilities:**
+
+* OIDC/SAML/OAuth 2.1 flows
+* Workload identity (SPIFFE/SPIRE, IRSA, Workload Identity)
+* Token issuance, rotation, revocation
+* Tenant resolution and propagation
+* SCIM provisioning for enterprise customers
+* MFA enforcement (WebAuthn, TOTP)
+* Just-in-time access for staff
+
+**Typical technologies:** Auth0, Okta, Keycloak, Ory, internal IdP with OPA for policy, HashiCorp Vault for workload secrets.
+
+**Failure modes:** IdP outage (cached JWT validation with JWTS grace window), token leak, account takeover via SIM-swap, SCIM sync drift.
+
+**Security:** Phishing-resistant MFA for staff, short-lived tokens (≤15 min), refresh token rotation with detection of reuse, hardware keys for prod access.
+
+**Monitoring:** Login success/failure rates by tenant, MFA enrollment, token issuance latency, suspicious login patterns.
+
+**Ownership:** Security + Platform.
+
+---
+
+## Layer 6 — Application Services
+
+**Purpose:** Core business logic as discrete, independently deployable services.
+
+**Responsibilities:**
+
+* Domain logic (workspaces, documents, annotations, permissions)
+* Orchestration of downstream services
+* Request-scoped authorization checks
+* Idempotency enforcement at service boundaries
+* Multi-tenant data scoping
+
+**Typical technologies:** Go, Rust, Python (for AI-adjacent services), Node/TypeScript; gRPC internally; REST/GraphQL externally. Frameworks: gRPC-Go, FastAPI, NestJS.
+
+**Scaling concerns:** Statelessness is mandatory; horizontal pod autoscaling on CPU/RPS/GPU-queue depth; service mesh (Istio/Linkerd) for mTLS and traffic control.
+
+**Failure modes:** Cascading failures from unbounded retries, thread pool exhaustion, slow dependency causing timeouts upstream, thundering herd on cache warmup.
+
+**Security:** Input validation at every boundary, output encoding, dependency pinning with SBOM, no secrets in code or env (Vault-injected).
+
+**Monitoring:** RED metrics (Rate, Errors, Duration), USE metrics (Utilization, Saturation, Errors), per-tenant segmentation.
+
+**Ownership:** Product Engineering teams with platform guardrails.
+
+---
+
+## Layer 7 — Background Jobs & Workflow Orchestration
+
+**Purpose:** Durable execution of long-running, retryable, multi-step work (document ingestion, embedding generation, batch inference, billing rollups).
+
+**Responsibilities:**
+
+* Task scheduling and prioritization
+* Durable state machine execution
+* Retry with exponential backoff and jitter
+* Dead letter handling
+* Per-tenant fairness and backpressure
+
+**Typical technologies:** Temporal (preferred for durable workflows), Celery, BullMQ, AWS Step Functions, Argo Workflows for ML pipelines.
+
+**Failure modes:** Poison messages, stuck workflows (missing heartbeats), worker starvation, head-of-line blocking on shared queues.
+
+**Security:** Per-tenant task isolation, sensitive payload encryption at rest in task store, audit logging of admin task actions.
+
+**Monitoring:** Queue depth, processing latency p95/p99, retry rates, DLQ growth, workflow success rate by type.
+
+**Ownership:** Platform + Product.
+
+---
+
+## Layer 8 — Event & Streaming Backbone
+
+**Purpose:** Decoupled, asynchronous, replayable communication between services and systems.
+
+**Responsibilities:**
+
+* Domain event publication and subscription
+* Audit event stream
+* CDC (Change Data Capture) from databases
+* Real-time fan-out to search, vector store, notifications, analytics
+
+**Typical technologies:** Kafka (Confluent/MSK/self-hosted), Redpanda, NATS JetStream, Pulsar; Pulsar/Kafka for tier-1 durability.
+
+**Failure modes:** Consumer lag, partition imbalance, schema incompatibility, broker disk pressure, ISR shrink.
+
+**Security:** TLS, SASL, per-topic ACLs, schema registry with compatibility enforcement, encryption-at-rest.
+
+**Monitoring:** Consumer lag (critical SLO metric), under-replicated partitions, producer throughput, schema evolution failures.
+
+**Ownership:** Data Platform.
+
+---
+
+## Layer 9 — Relational Database (System of Record)
+
+**Purpose:** Authoritative state for tenants, billing, accounts, permissions, configuration.
+
+**Responsibilities:**
+
+* ACID transactions for write-critical paths
+* Strong consistency for billing and authorization
+* Multi-tenant data isolation (row-level or schema-level)
+* Point-in-time recovery
+
+**Typical technologies:** PostgreSQL (Aurora, RDS, AlloyDB, Crunchy Bridge, Neon), CockroachDB / Spanner for global strong consistency, Vitess for sharded MySQL.
+
+**Scaling concerns:** Connection pooling (PgBouncer, Odyssey), read replicas for read-heavy workloads, partitioning for tenant growth, sharding strategy decided early (tenant_id hash).
+
+**Failure modes:** Primary failover, replication lag causing stale reads, vacuum bloat, lock contention, connection exhaustion, PITR gap.
+
+**Security:** TDE, column-level encryption for PII, RLS (Row-Level Security) for tenant isolation, least-privilege roles, query audit logging.
+
+**Monitoring:** Replication lag, buffer cache hit ratio, transaction latency p95/p99, deadlocks, connection saturation, vacuum health.
+
+**Disaster recovery:** Automated daily snapshots + continuous WAL archiving, cross-region replica with promoted RPO ≤ 5 min, RTO ≤ 15 min for tier-1.
+
+**Ownership:** Data Platform.
+
+---
+
+## Layer 10 — Cache Layer
+
+**Purpose:** Reduce read load on databases and AI services; absorb hot-key traffic.
+
+**Responsibilities:**
+
+* Session tokens, rate limit counters, idempotency keys
+* Computed query results
+* Model output caching (semantic cache for LLMs)
+* Distributed locks
+
+**Typical technologies:** Redis (Cluster Mode), Memcached, Dragonfly; Redis with RediSearch for secondary indexes.
+
+**Failure modes:** Cache stampede (mitigated via singleflight or probabilistic early expiration), hot keys, evictions causing DB thrash, network partition causing split-brain.
+
+**Security:** TLS, AUTH, per-tenant key namespacing, no PII in unencrypted cache, TTL enforcement.
+
+**Monitoring:** Hit ratio, eviction rate, memory fragmentation, latency p99, connection count, keyspace misses.
+
+**Ownership:** Platform.
+
+---
+
+## Layer 11 — Search & Vector Layer
+
+**Purpose:** Hybrid (lexical + dense vector) retrieval over tenant content; semantic search; RAG grounding.
+
+**Responsibilities:**
+
+* Incremental indexing from event stream
+* Hybrid retrieval (BM25 + ANN)
+* Per-tenant index isolation (physical or logical)
+* Re-ranking and filtering by metadata/permissions
+
+**Typical technologies:**
+
+* Vector: pgvector (small/medium), Pinecone (managed), Weaviate, Milvus, Qdrant, Vespa (large-scale hybrid)
+* Lexical: Elasticsearch/OpenSearch
+* Hybrid: Vespa or OpenSearch with kNN plugin; ColBERT/late-interaction for re-ranking
+
+**Scaling concerns:** ANN index build cost, memory pressure from HNSW graphs, sharding by tenant, index rebuild coordination during model upgrades (embedding model changes require full reindex).
+
+**Failure modes:** Index drift from DB, slow queries from unfiltered scans, recall degradation, OOM during bulk reindex.
+
+**Security:** Per-tenant ACL filters enforced at query time, encrypted indexes, no cross-tenant leakage in cached results.
+
+**Monitoring:** Query latency p99, indexing lag, recall/precision regression tests, memory pressure, shard health.
+
+**Ownership:** Search/AI Platform.
+
+---
+
+## Layer 12 — AI Inference & Model Serving
+
+**Purpose:** Serve LLMs, embedding models, classifiers, rerankers, vision models with predictable latency and cost.
+
+**Responsibilities:**
+
+* Model loading and warmup
+* Batching (dynamic, continuous batching for LLMs)
+* LoRA / adapter hot-swapping
+* Token bucketing and fair-share across tenants
+* Speculative decoding, quantization, KV-cache management
+* A/B routing across model versions
+
+**Typical technologies:** vLLM, TensorRT-LLM, Triton Inference Server, Ray Serve, KServe, SGLang; external APIs (OpenAI, Anthropic, Google) as fallback or for proprietary models.
+
+**Scaling concerns:** GPU scarcity and cost; autoscaling on queue depth; spot/preemptible GPU pools with checkpointing; multi-tenant fair scheduling; cold-start mitigation via warm pools.
+
+**Failure modes:** GPU OOM, model corruption, NCCL errors on multi-GPU, drift in model behavior after quantization, provider rate limits.
+
+**Security:** Model artifact signing (Sigstore), prompt-injection defense at gateway, PII scrubbing of prompts/logs, output safety classifiers, no customer data in third-party logs without DPA.
+
+**Monitoring:** Tokens/sec/GPU, queue depth, time-to-first-token (TTFT), inter-token latency, model quality metrics (eval harness in CI/CD and prod canaries), GPU utilization, thermal throttling.
+
+**Ownership:** AI Platform.
+
+---
+
+## Layer 13 — Object Storage & Data Lake
+
+**Purpose:** Durable storage for documents, embeddings, model artifacts, backups, audit logs, training data.
+
+**Responsibilities:**
+
+* Versioned immutable artifacts
+* Lifecycle policies (tier to cold storage)
+* Cross-region replication for tier-1 data
+* Pre-signed URL issuance for direct client upload/download
+
+**Typical technologies:** S3, GCS, Azure Blob; Iceberg/Delta for lakehouse; MinIO for self-hosted.
+
+**Failure modes:** Bucket misconfiguration (public exposure), lifecycle policy drift, replication lag, multipart upload orphans.
+
+**Security:** Bucket policies, KMS encryption with per-tenant CMKs where required, Block Public Access, access logs to immutable store, MAC/SSE-C for highly sensitive data.
+
+**Monitoring:** Bucket size, request rates, 4xx/5xx, replication SLA, KMS API throttling.
+
+**Ownership:** Data Platform.
+
+---
+
+## Layer 14 — Observability, Security Operations & Governance
+
+**Purpose:** Cross-cutting telemetry, security operations, compliance, and platform governance. Not a single service but a control plane that every layer emits to and is governed by.
+
+**Subcomponents:**
+
+**Observability:**
+
+* Metrics: Prometheus, Mimir, Cortex, Datadog
+* Logs: Loki, Elastic, Splunk, OpenSearch
+* Traces: Tempo, Jaeger, Honeycomb, Datadog APM
+* Profiling: Pyroscope, Parca, eBPF-based continuous profiling
+* Real User Monitoring: Datadog RUM, Sentry, FullStory
+
+**Security Operations:**
+
+* SIEM: Splunk, Sentinel, Elastic Security
+* SOAR: Tines, Phantom
+* EDR/XDR: CrowdStrike, Wazuh
+* CSPM: Wiz, Orca, Prowler
+* Secrets: Vault, AWS Secrets Manager, GCP Secret Manager
+* Policy: OPA/Gatekeeper, Kyverno
+
+**Governance:**
+
+* Model registry: MLflow, Vertex Model Registry, W&B
+* Data catalog: DataHub, OpenMetadata, Collibra
+* Feature store: Feast, Tecton
+* Lineage: OpenLineage, Marquez
+* Compliance: Vanta, Drata, SOC2/ISO27001/HIPAA evidence automation
+
+**Failure modes:** Observability pipeline outage (you are flying blind — protect this layer above all else), SIEM ingestion lag, alert fatigue causing real incidents to be missed.
+
+**Security:** Tamper-evident audit logs (append-only, WORM storage), separation of duties between ops and security, break-glass procedures audited.
+
+**Monitoring:** Pipeline lag, ingest errors, alert noise ratio, on-call escalation frequency, MTTA/MTTR.
+
+**Ownership:** SRE for observability, Security Engineering for SecOps, Data Platform for governance.
+
+---
+
+# Part 2 — Reliability Engineering
+
+Reliability is not a feature you add; it is a property that emerges from disciplined patterns applied uniformly across every layer.
+
+## Retries
+
+**Principle:** Retry only idempotent operations or operations with idempotency keys. Retry only transient failures. Bound total retries.
+
+**Pattern:**
+
+* Max 3 attempts
+* Exponential backoff with jitter: `delay = min(cap, base * 2^attempt) * (0.5 + random()*0.5)`
+* Distinguish retryable (5xx, network, timeout) from non-retryable (4xx, validation)
+* Use a per-call deadline budget (e.g., 2s total) rather than per-attempt timeouts
+
+**Example:** Embedding generation calls the inference layer. On 503, retry with backoff. On 400 (malformed input), fail fast and DLQ.
+
+## Backoff
+
+**Principle:** Decorrelated jitter (AWS architecture blog pattern) avoids synchronization thundering herds.
+
+```
+sleep = min(cap, random_between(0, base * 2^attempt))
+```
+
+For high-fanout systems (e.g., a workflow fanning out 10,000 embedding tasks), use **per-worker adaptive concurrency** (concurrency-limiter like VivaceCL or Netflix'sConcurrencyLimits) instead of flat backoff.
+
+## Idempotency
+
+**Implementation:** Every mutating API accepts an `Idempotency-Key` header. Server stores `(key, tenant_id, request_hash, response, expires_at)` in Redis/Postgres. Replays return cached response.
+
+**Critical paths requiring idempotency:**
+
+* Billing charges
+* Document creation
+* Workflow initiation
+* Any operation that fans out to side effects
+
+**Failure mode to avoid:** Returning cached response when request hash differs (indicates client bug — return 409 Conflict).
+
+## Dead Letter Queues
+
+**Pattern:** Every queue has a DLQ. DLQs are monitored as P1 alerts when growth exceeds threshold. DLQ messages have full context (original payload, headers, failure reason, stack trace).
+
+**Operational discipline:**
+
+* DLQ is not a graveyard — weekly review of DLQ contents
+* Replay tooling: ability to replay from DLQ after fix
+* Per-tenant DLQ isolation for noisy-neighbor protection
+* Time-to-live on DLQ messages (e.g., 7 days) with notification before expiry
+
+## Circuit Breakers
+
+**Pattern:** Three states — Closed (normal), Open (fail fast), Half-Open (probe).
+
+* Open after N consecutive failures or error rate > threshold over window
+* Half-open after cooldown; allow limited probe requests
+* Use per-dependency breakers, not global
+
+**Example:** If vector DB returns 5xx at >20% rate for 30s, circuit opens; search falls back to lexical-only or cached results. AI application degrades to "search unavailable, showing recent documents" rather than 500.
+
+## Graceful Degradation
+
+**Principle:** Every feature has a documented degradation path.
+
+| Feature                 | Primary          | Degraded         | Fallback             |
+| ----------------------- | ---------------- | ---------------- | -------------------- |
+| Semantic search         | Vector + lexical | Lexical only     | Recent documents     |
+| AI answer generation    | Fine-tuned model | Smaller model    | Templated response   |
+| Real-time collaboration | WebSocket        | Polling every 5s | Read-only mode       |
+| Billing metering        | Real-time events | Hourly batch     | Daily reconciliation |
+
+**Critical:** Degradation must be automatic and observable. Customers should see a banner ("Search is operating in limited mode") not silent failures.
+
+## Cached Fallbacks
+
+* **Stale-while-revalidate:** Serve cached data past TTL while refreshing
+* **Cached semantic search results:** Per-query cache with TTL for common queries
+* **Model output cache:** Identical prompts return cached completions (with disclosure)
+* **Config cache:** Services boot from last-known-good config if config service is down
+
+## Regional Failures
+
+**Strategy:**
+
+* Active-active for read paths in 2+ regions
+* Active-passive for write paths (single writer per shard, cross-region async replication)
+* DNS-level failover with health checks (Route53 weighted + failover)
+* Database: Aurora Global Database, CockroachDB, or Spanner for multi-region writes
+* Pre-tested failover runbooks with quarterly game days
+
+**RPO/RTO targets:**
+
+* Tier-1 customers: RPO ≤ 1 min, RTO ≤ 5 min
+* Platform default: RPO ≤ 5 min, RTO ≤ 15 min
+* Internal services: RPO ≤ 1 hr, RTO ≤ 1 hr
+
+## Dependency Failures
+
+* **Third-party LLM APIs:** Multi-provider routing (OpenAI ↔ Anthropic ↔ self-hosted), circuit breakers per provider, cost-aware fallback
+* **Payment provider:** Stripe primary, fallback to manual invoicing
+* **Email/SMS:** Multi-provider (SendGrid + Postmark; Twilio + MessageBird)
+* **Identity provider:** Cache JWT validation keys with 24h fallback window
+
+## Rollbacks
+
+* **Code:** Blue-green or canary with automated rollback on SLO breach (Datadog watchdog triggers Argo Rollouts rollback)
+* **Database migrations:** Forward-only with expand-contract pattern; backwards-compatible reads; never deploy a migration and code change that depends on it simultaneously
+* **Model deployments:** Shadow traffic → 5% canary → 25% → 100%, with quality eval gates; instant rollback to previous version
+* **Config:** Versioned config in Git, applied via operator; instant revert
+
+## Incident Response
+
+**Severity levels:**
+
+* **SEV1:** Customer data loss, security breach, total platform outage — page CEO, all-hands war room
+* **SEV2:** Major feature down for >10% of customers, SLA breach imminent — page on-call + team lead
+* **SEV3:** Degraded performance, minor feature down — page on-call
+* **SEV4:** Cosmetic, single-customer issues — ticket
+
+**Process:**
+
+1. Acknowledge within 5 min (SEV1/2)
+2. Incident Commander designated; comms lead separate from technical lead
+3. Status page updated within 10 min
+4. Time-stamped timeline in incident channel
+5. Customer comms cadence: every 30 min during SEV1
+6. Postmortem within 5 business days, blameless, with action items tracked to completion
+7. Action items reviewed monthly until closed
+
+---
+
+# Part 3 — Security Engineering
+
+## Authentication
+
+* **External users:** OIDC with PKCE; SAML 2.0 for enterprise SSO; SCIM 2.0 for automated provisioning
+* **Staff:** SSO via corporate IdP (Okta/Entra ID) + phishing-resistant MFA (WebAuthn hardware keys mandatory for prod access)
+* **Service-to-service:** SPIFFE/SPIRE workload identity or cloud-native (IRSA, Workload Identity); mTLS everywhere internally
+* **Machine-to-platform:** API keys with scoped permissions, rotated annually, stored in Vault
+* **Token hygiene:** Access tokens ≤ 15 min TTL; refresh token rotation with reuse detection; logout invalidates refresh tokens server-side
+
+## Authorization
+
+**RBAC (Role-Based Access Control):**
+
+* Roles: Owner, Admin, Editor, Viewer, Billing, API-only
+* Per-workspace, per-project scoping
+* Roles defined in policy engine, not in application code
+
+**ABAC (Attribute-Based Access Control):**
+
+* For fine-grained: "user can read document X if document.tenant == user.tenant AND document.classification ≤ user.clearance AND document.owner.team ∈ user.teams"
+* Implemented via OPA Rego policies evaluated at API gateway and service boundary
+* Policies versioned in Git, tested in CI, deployed via operator
+
+**Just-in-time elevation:**
+
+* Staff request elevated access via Slack workflow
+* Approval required (peer or manager)
+* Time-boxed (1 hour default)
+* All actions logged to immutable audit store
+
+## MFA
+
+* **WebAuthn (passkeys/hardware keys)** as primary
+* TOTP as fallback
+* SMS prohibited for staff
+* Step-up auth for sensitive actions (billing changes, API key creation, data export)
+* Risk-based: re-challenge on new device, new geo, impossible travel
+
+## Secret Management
+
+* **Vault** (or cloud equivalent) as single source of truth
+* Secrets injected at runtime via sidecar or CSI driver — never baked into images
+* Dynamic secrets for databases (short-lived credentials per pod)
+* Rotation: automated for DB credentials; quarterly for API keys; immediate on personnel changes
+* Secret scanning in CI (Gitleaks, TruffleHog) and pre-commit hooks
+* Break-glass credentials in sealed physical/ escrow, used only with SEV1 approval, audited
+
+## Encryption
+
+* **In transit:** TLS 1.3 everywhere; mTLS internally; HSTS preload; certificate transparency monitoring
+* **At rest:** AES-256 with KMS-managed keys; per-tenant CMKs for enterprise tier
+* **In use:** Confidential computing (Intel SGX, AMD SEV-SNP, Nitro Enclaves) for highly sensitive workloads; homomorphic encryption for specific compliance scenarios (research stage)
+* **Key management:** HSM-backed KMS; key rotation annually; automatic re-encryption on rotation for new data; re-encryption jobs for historical data
+* **Field-level encryption** for PII (SSN, payment data) with separate key from DB TDE
+
+## Audit Logs
+
+* **What:** Every auth event, every data access, every config change, every admin action, every model invocation, every export
+* **Where:** Append-only WORM storage (S3 Object Lock in compliance mode)
+* **Format:** Structured JSON with actor, action, resource, tenant, timestamp, source IP, user agent, correlation ID
+* **Retention:** 7 years for compliance (SOC2, HIPAA); hot for 90 days in SIEM
+* **Tamper detection:** Hash chaining of log entries; alert on chain break
+* **Customer access:** Customer-facing audit log API and UI for enterprise tier
+
+## Tenant Isolation
+
+**Tiered isolation model:**
+
+| Tier       | Isolation Model                                      | Use Case                      |
+| ---------- | ---------------------------------------------------- | ----------------------------- |
+| Standard   | Logical (row-level security, tenant_id on every row) | Most customers                |
+| Pro        | Schema-level isolation (separate schema per tenant)  | Mid-market                    |
+| Enterprise | Dedicated cluster / VPC peering                      | Regulated, large              |
+| Sovereign  | Dedicated region / on-prem deployment                | Government, EU data residency |
+
+**Enforcement:**
+
+* Row-Level Security in Postgres as defense-in-depth (even if app filters by tenant_id)
+* Per-tenant encryption keys
+* Per-tenant rate limits and quotas
+* Network policies preventing cross-tenant service calls
+* Noisy-neighbor protection: per-tenant resource quotas in compute, DB, queue
+
+## API Security
+
+* OAuth 2.1 with PKCE for all flows
+* Signed request bodies for webhooks (HMAC-SHA256 with timestamp window)
+* Rate limiting per identity, per IP, per tenant (token bucket + leaky bucket)
+* Schema validation (OpenAPI/Protobuf) at gateway
+* Payload size limits
+* API versioning with deprecation policy (12-month minimum)
+* Webhook retry with exponential backoff and signature verification
+
+## Supply Chain Security
+
+* **SBOM** generated for every service (Syft); stored alongside artifacts
+* **Container scanning** (Trivy, Grype) in CI; block on critical CVEs
+* **Signed artifacts** (Sigstore/cosign); verify signature before deploy
+* **Dependency pinning** with lockfiles; automated PRs for updates (Renovate) with security review
+* **Provenance** (SLSA Level 3+); attestations for build pipeline integrity
+* **Private artifact registry** with retention policies
+* **No internet egress** from production pods except via egress proxy with allowlist
+
+## CI/CD Security
+
+* **Pipeline runs in isolated ephemeral environments** (no shared runners with prod access)
+* **OIDC federation** for CI to cloud — no long-lived credentials
+* **Branch protection:** required reviews, status checks, signed commits
+* **Deployment approvals** for prod (human + automated policy check)
+* **Secrets never in CI logs** — masked and redacted
+* **Pipeline as code** reviewed via PR
+* **Build reproducibility** — same commit produces same artifact hash
+
+## Compliance
+
+* **SOC 2 Type II** (annual audit, continuous evidence collection via Vanta/Drata)
+* **ISO 27001** for international customers
+* **HIPAA** for healthcare (BAA with subprocessors, PHI tagging, encryption, audit)
+* **GDPR** — data residency (EU region), right to erasure, DPA, DPIA, DPO
+* **PCI DSS** — outsource to Stripe (SAQ-A); never touch raw card data
+* **FedRAMP** for government (separate authorized environment)
+* **AI-specific:** EU AI Act risk classification, NIST AI RMF, model cards, impact assessments
+
+---
+
+# Part 4 — Observability
+
+## Three Pillars + Two More
+
+### Metrics
+
+**RED metrics** (services): Rate, Errors, Duration
+**USE metrics** (resources): Utilization, Saturation, Errors
+**Four Golden Signals** (Google SRE): Latency, Traffic, Errors, Saturation
+**Business metrics:** Active tenants, queries per tenant, tokens consumed, revenue per tenant, churn signals
+
+**Cardinality discipline:** No unbounded labels (no user_id, no request_id as labels). High-cardinality data goes to logs/traces.
+
+**Collection:** Prometheus with remote write to Mimir/Cortex; 15s scrape interval; 90-day retention at 1m resolution, 1-year at 1h resolution.
+
+### Logs
+
+* Structured JSON with correlation ID, tenant ID, user ID (hashed), request ID
+* Sampled at ingest for high-volume services (e.g., 10% of successful requests, 100% of errors)
+* PII scrubbed or tokenized before leaving the service boundary
+* Hot retention: 30 days in Loki/Elastic; cold: 1 year in S3 with Athena query
+* 7-year retention for audit logs separately
+
+### Traces
+
+* OpenTelemetry SDK in every service
+* 100% sampling for errors and slow requests; 1-10% baseline sampling
+* Tail-based sampling at collector (priority on errors, latency > p99, specific tenants)
+* Trace propagation across async boundaries (Temporal workflows, Kafka messages) via trace context headers
+* Distributed trace should show: edge → gateway → service → DB → inference → response, with span attributes for tokens, model, tenant
+
+### Dashboards
+
+**Three tiers:**
+
+1. **Executive (daily/weekly):** SLO status, revenue, active tenants, incident count, MTTR, customer NPS
+2. **Service owner (real-time):** RED metrics, error budget burn rate, dependency health, deployment markers
+3. **On-call (real-time, high signal):** Active alerts, recent deployments, error spikes, queue depth, saturation
+
+**Principles:**
+
+* Every dashboard answers a specific question
+* No dashboard without an associated alert or runbook
+* Annotations for deployments, incidents, config changes
+* Tenant-segmented views for customer success
+
+### Alerts
+
+**Alert taxonomy:**
+
+* **Page (wake someone up):** SLO burn rate, service down, data integrity, security incident
+* **Ticket:** Capacity trends, error budget at 50%, DLQ growth, cert expiry in 14 days
+* **Info:** Deployment completed, scaling event, config change
+
+**Alert hygiene:**
+
+* Every alert has a runbook
+* Monthly alert review: noise ratio, actionability, time-to-ack
+* Target: <5 pages per on-call shift; >90% of pages actionable
+* Alert on symptoms (user impact) not causes (CPU high)
+
+### SLIs / SLOs
+
+**Example SLOs:**
+
+| Service         | SLI                                      | SLO Target | Window         |
+| --------------- | ---------------------------------------- | ---------- | -------------- |
+| API Gateway     | 99.9% of requests < 500ms p95            | 99.9%      | 30-day rolling |
+| Search          | 99.5% of queries return in < 2s p95      | 99.5%      | 30-day rolling |
+| AI Inference    | 99% of completions complete in < 10s p95 | 99.0%      | 30-day rolling |
+| Background Jobs | 99.9% of jobs complete within SLA        | 99.9%      | 30-day rolling |
+| Uptime          | 99.95% successful health checks          | 99.95%     | 30-day rolling |
+
+### Error Budgets
+
+* Budget = (1 - SLO) × window
+* Example: 99.9% over 30 days = 43.2 min of allowed downtime/error
+* **Budget consumed:** freeze feature deploys, focus on reliability
+* **Budget exceeded:** postmortem required, SLO renegotiation or reliability investment
+* **Budget surplus:** opportunity for risk-taking (canaries, experiments)
+
+### Runbooks
+
+**Every alert links to a runbook containing:**
+
+* Symptom description
+* Likely causes (ranked)
+* Diagnostic steps (exact commands, dashboards, queries)
+* Mitigation steps (with exact commands)
+* Escalation path
+* Post-incident checklist
+* Last-updated date and owner
+
+**Runbook quality is measured:** % of incidents resolved using runbook without escalation.
+
+---
+
+# Part 5 — Scalability
+
+## Stage 1 — 100 Users (Validation)
+
+**Architecture:** Monolith or small set of services; single Postgres; Redis cache; single region; background jobs via simple queue.
+
+**Bottlenecks:** None technical; bottleneck is product-market fit.
+
+**Cost:** $2K–10K/month infra; 1-2 engineers.
+
+**Operational changes:** Establish CI/CD, basic monitoring, backups. This is where bad habits form — avoid them.
+
+**Critical decisions made now that are hard to undo:**
+
+* Tenant isolation model (tenant_id on every row from day 1)
+* Idempotency keys on all mutating APIs
+* Structured logging with correlation IDs
+* Migrations as code, forward-only
+
+## Stage 2 — 1,000 Users (Early Scale)
+
+**Architecture:** Service decomposition begins (auth, billing, search separated); read replicas; queue with workers; basic vector search (pgvector or small managed service).
+
+**Bottlenecks:**
+
+* Postgres connection count (introduce PgBouncer)
+* Search latency on larger indexes
+* Background job queue depth during ingest spikes
+
+**Architectural changes:**
+
+* Introduce API gateway
+* Separate search into dedicated cluster
+* Add CDN for static assets
+* Introduce service mesh or at minimum mTLS
+
+**Cost:** $20K–50K/month; 5-10 engineers; SRE hire critical.
+
+**Operational changes:**
+
+* Formal on-call rotation
+* SLOs defined and tracked
+* Runbooks for top 10 failure modes
+* First chaos exercise
+
+## Stage 3 — 10,000 Users (Growth)
+
+**Architecture:** Multi-region active-passive; dedicated vector DB; Kafka for event streaming; Temporal for workflows; dedicated inference layer with GPU autoscaling.
+
+**Bottlenecks:**
+
+* Database write throughput (introduce sharding by tenant_id)
+* Vector search at 10M+ vectors (shard by tenant, consider dedicated vector DB)
+* GPU cost and availability (need reserved capacity + spot strategy)
+* Per-tenant noisy neighbors (need per-tenant quotas everywhere)
+
+**Architectural changes:**
+
+* Shard Postgres by tenant_id
+* Dedicated vector database (Pinecone/Milvus/Vespa)
+* Multi-AZ inference clusters with autoscaling
+* Per-tenant rate limiting at gateway
+* Event sourcing for audit and replay
+
+**Cost:** $100K–500K/month; 20-50 engineers; dedicated SRE, Security, and Platform teams.
+
+**Operational changes:**
+
+* Formal incident management with IC role
+* Quarterly disaster recovery exercises
+* Cost allocation per tenant (FinOps)
+* Capacity planning with 6-month horizon
+* SOC 2 Type II audit
+
+## Stage 4 — 100,000 Users (Scale)
+
+**Architecture:** Multi-region active-active for reads; globally distributed vector search; cell-based architecture (each cell is a self-contained deployment serving a subset of tenants); dedicated AI inference regions near GPU capacity.
+
+**Bottlenecks:**
+
+* Cross-region replication lag (need conflict-free data types or single-writer per shard)
+* GPU scheduling fairness across tenants (need fair-share scheduler)
+* Search index rebuild cost on embedding model upgrades (need dual-index strategy)
+* Billing event volume (need streaming aggregation, not per-event DB writes)
+* Observability data volume (need sampling strategy)
+
+**Architectural changes:**
+
+* Cell-based deployment (salesforce.com model)
+* Globally distributed database (CockroachDB/Spanner) or sharded Postgres with global routing
+* Streaming billing aggregation (Kafka → Flink → ledger)
+* Per-tenant model routing and quotas
+* Federated observability (per-cell collection, global aggregation)
+
+**Cost:** $1M–5M/month; 100+ engineers; multiple platform teams.
+
+**Operational changes:**
+
+* Capacity planning integrated with finance
+* Formal SRE engagement model with product teams
+* Monthly game days
+* AI cost governance committee
+* Multi-region failover tested monthly
+
+## Stage 5 — Millions of Indexed Entities
+
+**Architecture:** Same as Stage 4 but with:
+
+* Trillion-token-scale vector indexes (Vespa, custom sharding)
+* Tiered storage (hot vectors in RAM, warm in SSD, cold in object storage with on-demand load)
+* Approximate nearest neighbor with quality SLOs (recall@k > 0.95)
+* Distributed inference across multiple GPU clusters
+* Custom schedulers for cost-aware routing
+
+**Bottlenecks:**
+
+* Vector index memory (need quantization: PQ, SQ, binary)
+* Embedding generation throughput (need batch inference at scale)
+* Search recall vs. latency tradeoff (need per-tenant SLO tuning)
+* Storage cost for raw documents + embeddings + indices
+
+**Cost implications:** GPU spend dominates (60-70% of infra cost). Cost optimization is a first-class engineering concern: quantization, distillation, caching, batching, spot instances, multi-model routing (route easy queries to small model).
+
+**Operational changes:**
+
+* Dedicated AI cost optimization team
+* Real-time cost telemetry per query
+* Model quality regression testing in production
+* Capacity contracts with GPU providers (reserved + on-demand + spot mix)
+* Carbon footprint tracking and offsetting
+
+---
+
+# Part 6 — Internal Operations
+
+## Admin & Staff Users
+
+* **Internal IdP** separate from customer IdP
+* **Role-based access:** Support Agent, Support Lead, Billing Admin, Security Analyst, Engineer, SRE, Super Admin
+* **Just-in-time elevation** with approval workflow
+* **All actions** in audit log with immutable storage
+* **No production data access** without customer consent (except for SEV1 incidents with documented approval)
+
+## Support Tooling
+
+* **Customer 360 view:** tenant details, plan, usage, recent incidents, support history, billing status
+* **Impersonation** (with customer consent, time-boxed, fully audited, customer sees indicator)
+* **Diagnostic tools:** query customer's data with their permission, view their API logs, test their webhooks
+* **Feature flag override** per tenant (with approval)
+* **Rate limit override** per tenant (with approval and expiration)
+
+**Build vs. buy:** Build internal tooling on a platform like Retool or Internal, backed by read-only replicas. Never give staff direct DB access.
+
+## Billing Operations
+
+* **Ledger system:** double-entry, immutable, auditable
+* **Metering pipeline:** events → streaming aggregation → ledger → invoice
+* **Dispute handling:** workflow with evidence collection
+* **Refund authority:** tiered (support: ≤$500; lead: ≤$5K; finance: unlimited)
+* **Dunning:** automated email sequences with staff override
+* **Plan changes:** proration logic tested exhaustively
+* **Revenue recognition:** integrate with finance system (NetSuite) for ASC 606 compliance
+
+## Abuse Investigations
+
+* **Abuse signals:** spike in API usage, unusual content patterns, payment fraud indicators, ToS violation reports
+* **Investigation tools:** query user activity, content samples (with privacy review), payment history
+* **Actions:** warn, suspend, terminate, refund, report to authorities
+* **Due process:** documented policy, appeal process, legal review for terminations
+* **Trust & Safety team** with documented playbooks
+
+## Incident Management
+
+* **Incident channel** auto-created on SEV1/2 declaration (Slack workflow)
+* **Incident Commander** role rotates; trained ICs on call 24/7
+* **Status page** (Atlassian Statuspage, custom) auto-updated
+* **Customer comms templates** pre-approved by legal
+* **War room** (Zoom/Meet) auto-provisioned
+* **Postmortem** in dedicated system (incident.io, FireHydrant) with action item tracking
+* **Monthly incident review** with leadership
+
+## Customer Success Tooling
+
+* **Health scores** (composite of usage, engagement, support tickets, NPS)
+* ** churn prediction** (ML model on usage patterns)
+* **Usage dashboards** per customer (shared with customer)
+* **Onboarding checklists** tracked
+* **Quarterly business review** templates with auto-populated data
+
+## Feature Flags
+
+* **System:** LaunchDarkly, Unleash, or internal on top of Postgres + Redis
+* **Flag types:** release (on/off), experiment (A/B), ops (kill switch), permission (entitlement)
+* **Governance:** flags have owner, expiry date, default state, rollback plan
+* **Audit:** flag changes logged; customer-facing flags require approval
+* **Kill switches:** per-feature, per-tenant, per-region; tested quarterly
+
+## Audit Trails
+
+* **Customer-facing:** "who did what when" in their workspace
+* **Internal:** all staff actions on customer data
+* **System:** all config changes, deployments, access grants
+* **Immutable:** S3 Object Lock, hash-chained, 7-year retention
+* **Queryable:** SIEM for security, dedicated audit UI for customers and compliance
+
+---
+
+# Part 7 — Testing Strategy
+
+## Unit Tests
+
+**Purpose:** Verify individual functions and classes in isolation.
+
+**Example cases:** Tenant isolation filter returns only current tenant's data; idempotency key collision returns cached response; billing proration calculation correct for mid-cycle upgrade.
+
+**Success criteria:** 90%+ line coverage on business logic; 100% on billing, auth, and tenant isolation code.
+
+**Failure threshold:** Any PR reducing coverage on critical paths is blocked.
+
+**Automation:** Run on every commit in PR pipeline; <2 min total; parallelized.
+
+## Integration Tests
+
+**Purpose:** Verify service interactions with real dependencies (test database, test Redis, test vector DB).
+
+**Example cases:** Service writes to Postgres and publishes event to Kafka; event consumed and vector index updated; query returns updated data within 5s.
+
+**Success criteria:** All integration tests pass; no flaky tests (flaky rate <0.1%).
+
+**Failure threshold:** Any flaky test is quarantined within 24h and fixed within 1 week.
+
+**Automation:** Run on PR merge to main; run nightly against staging; spin up dependencies via testcontainers.
+
+## End-to-End Tests
+
+**Purpose:** Verify complete user journeys through the real system.
+
+**Example cases:** New user signs up, creates workspace, uploads document, searches it, gets AI answer; admin invites user, user accepts, accesses shared resource; billing cycle completes, invoice generated, payment processed.
+
+**Success criteria:** 95% of E2E tests pass on staging; 100% pass required for production deploy gate.
+
+**Failure threshold:** Any E2E failure blocks deploy; root caused before fix.
+
+**Automation:** Playwright/Cypress; run on staging after deploy; run smoke subset (5-10 critical paths) on production after deploy.
+
+## Contract Tests
+
+**Purpose:** Verify service API contracts between consumers and providers.
+
+**Example cases:** API gateway expects specific response schema from auth service; AI service expects specific request format from application service; webhook payload matches documented schema.
+
+**Success criteria:** Provider cannot change contract without consumer approval; consumer tests run against provider's contract in CI.
+
+**Automation:** Pact or schemathesis; run in both provider and consumer CI pipelines.
+
+## Migration Tests
+
+**Purpose:** Verify database migrations are safe, reversible, and don't break existing code.
+
+**Example cases:** Add column with default — verify old code still reads; expand contract (add nullable column) — verify old code writes; contract (remove deprecated column) — verify no code references it; large data backfill — verify performance on production-sized dataset.
+
+**Success criteria:** Migration runs on production snapshot in <5 min; both old and new code versions work during migration window.
+
+**Failure threshold:** Migration that locks table for >1s on production-sized data is blocked.
+
+**Automation:** Run migrations forward and backward on anonymized production snapshot in CI.
+
+## Security Tests
+
+**Purpose:** Verify security controls are effective.
+
+**Example cases:** Tenant A cannot read tenant B's data (automated multi-tenant test); auth bypass attempts; injection attacks; privilege escalation; IDOR; SSRF; prompt injection against LLM; model extraction attempts.
+
+**Success criteria:** Zero critical/high vulnerabilities; OWASP Top 10 coverage.
+
+**Automation:** SAST (Semgrep, CodeQL) in CI; DAST (ZAP, Burp) nightly; dependency scanning (Snyk, Dependabot) on every PR; annual penetration test; quarterly red team exercise.
+
+## Load Tests
+
+**Purpose:** Verify system meets performance SLOs under expected load.
+
+**Example cases:** 10K concurrent users browsing; 1K searches/sec sustained for 30 min; 100 document uploads/sec with embedding generation; 10K API calls/sec across 100 tenants.
+
+**Success criteria:** p95 latency within SLO; error rate <0.1%; no resource saturation; cost per request within budget.
+
+**Failure threshold:** SLO breach triggers investigation before feature ships.
+
+**Automation:** k6 or Locust; run weekly against staging with production-like data; run before major releases.
+
+## Stress Tests
+
+**Purpose:** Find system breaking points and verify graceful degradation.
+
+**Example cases:** 10x expected peak load; sudden traffic spike (Black Friday scenario); single tenant generating 1000x normal traffic; GPU cluster saturated — verify queueing and degradation.
+
+**Success criteria:** System degrades gracefully (not hard crash); recovery is automatic; no data loss; no cross-tenant impact.
+
+**Automation:** Monthly stress exercise; results feed capacity planning.
+
+## Chaos Tests
+
+**Purpose:** Verify resilience to component failures.
+
+**Example cases:** Kill random pods; inject 500ms latency into database; drop 10% of Kafka messages; failover primary DB; disconnect a region; saturate Redis (force cache miss storm); GPU node disappears mid-inference.
+
+**Success criteria:** SLO maintained or degraded gracefully; automatic recovery; no manual intervention required.
+
+**Failure threshold:** Any chaos test causing SLO breach or manual intervention triggers hardening work.
+
+**Automation:** Chaos Mesh or Gremlin; start in staging, graduate to production (with blast radius limits); quarterly game days.
+
+## Disaster Recovery Tests
+
+**Purpose:** Verify RPO/RTO targets are met.
+
+**Example cases:** Region failover — measure RTO; database restore from backup — measure RPO and data loss; restore audit logs from cold storage; failover to secondary LLM provider; restore from corrupted state.
+
+**Success criteria:** RTO ≤ 15 min for tier-1; RPO ≤ 5 min; data integrity verified post-restore.
+
+**Failure threshold:** Any DR test failing its target triggers P1 reliability work.
+
+**Automation:** Quarterly full DR exercise; monthly partial (one component); results reported to leadership.
+
+## Adversarial Tests
+
+**Purpose:** Verify defenses against determined adversaries.
+
+**Example cases:** Prompt injection attempts; model extraction via repeated queries; data exfiltration via search; credential stuffing; API key theft simulation; insider threat simulation; supply chain attack (compromised dependency).
+
+**Success criteria:** No data exfiltration; no privilege escalation; attacks detected and alerted; rate limiting engages.
+
+**Automation:** Quarterly red team; annual third-party penetration test; continuous automated adversarial testing for prompt injection (garak, promptfoo).
+
+## Regression Tests
+
+**Purpose:** Prevent reintroduction of fixed bugs.
+
+**Example cases:** Bug #1234 (tenant isolation leak) — verify fix holds; bug #5678 (billing double-charge) — verify fix holds; bug #9012 (DLQ message loss) — verify fix holds.
+
+**Success criteria:** 100% of regression tests pass.
+
+**Automation:** Every bug fix includes a regression test; tests run in CI on every PR.
+
+---
+
+# Part 8 — Failure Scenarios
+
+## Database Outage (Primary Down)
+
+**Detection:** Health check fails; replication lag alerts; connection errors spike.
+
+**Response:**
+
+1. Automated failover to standby (Aurora: typically <30s)
+2. Read replicas continue serving reads
+3. Writes queue in Kafka/event store (event sourcing pattern); replayed when primary restored
+4. Services detect write failures and switch to "degraded write mode" (acknowledge to user, process asynchronously)
+5. Status page updated
+6. Post-failover: verify replication caught up before enabling full write load
+
+**Customer impact:** Brief write unavailability (seconds to minutes); reads continue.
+
+## Cache Outage (Redis Down)
+
+**Detection:** Cache miss rate → 100%; DB load spikes.
+
+**Response:**
+
+1. Services detect cache unavailability; switch to "cache bypass" mode (read directly from DB with rate limiting)
+2. Per-tenant rate limiting tightened to protect DB
+3. Fallback to local in-process cache (Caffeine, moka) for hot keys
+4. Non-critical cached features (recommendations, analytics) disabled
+5. On recovery: gradual warm-up (no thundering herd); staged cache repopulation
+
+**Customer impact:** Increased latency (2-5x); some features disabled.
+
+## Queue Outage (Kafka Down)
+
+**Detection:** Producer errors; consumer lag → 0 (no messages); downstream services see no new data.
+
+**Response:**
+
+1. Producers fall back to local WAL (write-ahead log on disk); batch send on recovery
+2. Critical events (billing, audit) have secondary path: direct DB write + reconciliation job
+3. Search/vector index updates paused; will catch up on recovery
+4. Background jobs paused; users notified "processing delayed"
+5. On recovery: replay from WAL; verify no duplicates via idempotency keys; monitor consumer lag to zero
+
+**Customer impact:** Delayed background processing; real-time features may show stale data.
+
+## Search Outage (Vector or Lexical)
+
+**Detection:** Search latency spikes; error rate increases; index health checks fail.
+
+**Response:**
+
+1. Circuit breaker opens for search service
+2. Fallback to lexical-only search (if vector failed) or cached results
+3. If both fail: "Search temporarily unavailable" + recent documents view
+4. Index rebuild initiated in parallel cluster
+5. Dual-index strategy: maintain previous index version until new one verified healthy
+
+**Customer impact:** Degraded search quality or temporary unavailability.
+
+## Third-Party API Failure (LLM Provider Down)
+
+**Detection:** Provider health check fails; latency spikes; rate limit errors.
+
+**Response:**
+
+1. Circuit breaker opens for provider
+2. Automatic failover to secondary provider (Anthropic ↔ OpenAI ↔ self-hosted)
+3. Model routing config updated; requests rerouted within seconds
+4. Semantic cache serves identical prompts from cache
+5. For unique prompts: queue with "generation in progress, will notify" pattern
+6. Cost alerts: secondary provider may be more expensive; FinOps alerted
+
+**Customer impact:** Brief latency increase; some requests may queue; quality may differ slightly (model swap).
+
+## Worker Crashes
+
+**Detection:** Worker heartbeat stops; Temporal detects missed heartbeat; task retried.
+
+**Response:**
+
+1. Workflow engine (Temporal) automatically retries on different worker
+2. Idempotency ensures no duplicate side effects
+3. Crash logs captured; auto-aggregated for pattern detection
+4. If crash rate > threshold: worker pool quarantined; new pool spun up with previous image version
+5. Long-running workflows checkpointed; resume from last checkpoint
+
+**Customer impact:** Minimal; work continues with slight delay.
+
+## Region Outage
+
+**Detection:** Health checks from all services in region fail; cross-region monitoring confirms.
+
+**Response:**
+
+1. DNS failover triggered automatically (Route53 health-checked failover)
+2. Traffic routed to healthy region
+3. Database: promote secondary region to primary (Aurora Global Database: <1 min promotion)
+4. Vector/search: secondary index in healthy region takes over
+5. Background jobs: resume in healthy region; state recovered from durable store
+6. Customer comms: status page updated within 5 min
+7. Failback: only after region stable; planned maintenance window; verify data consistency
+
+**Customer impact:** Brief unavailability (1-5 min); possible data loss within RPO window (≤5 min).
+
+## Corrupted Messages
+
+**Detection:** Schema validation fails; deserialization errors; consumer errors spike.
+
+**Response:**
+
+1. Schema registry rejects incompatible messages at producer
+2. Consumer routes invalid messages to DLQ with full context
+3. DLQ monitored; alert on growth
+4. Replay tooling: fix schema, transform message, replay
+5. If corruption indicates data integrity issue: freeze affected pipeline; investigate; customer comms if their data affected
+
+**Customer impact:** Isolated to affected messages; no system-wide impact.
+
+## Rate Limit Exhaustion
+
+**Detection:** 429 responses increase; quota service reports saturation.
+
+**Response:**
+
+1. Per-tenant quotas enforced; heavy tenants throttled
+2. Fair-share scheduler ensures small tenants not starved
+3. Burst capacity from reserved pool
+4. If platform-wide: degrade non-critical features (analytics, background reindex) to preserve critical path
+5. Auto-scale additional capacity if possible
+6. Customer comms for affected heavy tenants: "You've hit your plan limit; upgrade or wait for reset"
+
+**Customer impact:** Throttled requests for heavy users; normal users unaffected.
+
+---
+
+# Part 9 — Production Readiness Checklist
+
+## Infrastructure
+
+**Required before launch:**
+
+* [ ] Multi-AZ deployment with automated failover for stateful services
+* [ ] Automated daily backups with tested restore
+* [ ] Infrastructure as code (Terraform/Pulumi); no manual cloud changes
+* [ ] VPC with private subnets; no public IPs on services
+* [ ] TLS everywhere; HSTS; certificate auto-renewal
+* [ ] CDN configured for static assets
+* [ ] DNS with health-checked failover
+* [ ] Resource quotas and limits on all services
+* [ ] Cost monitoring and billing alerts
+
+**Required before scale (10K users):**
+
+* [ ] Multi-region deployment (active-passive minimum)
+* [ ] Per-tenant resource isolation (quotas, rate limits)
+* [ ] Dedicated vector search cluster
+* [ ] GPU autoscaling with warm pool
+* [ ] Cross-region backup replication
+* [ ] Egress filtering (no unrestricted internet from prod)
+* [ ] Network policies between services
+
+**Nice to have:**
+
+* [ ] Cell-based architecture
+* [ ] Multi-region active-active
+* [ ] Carbon-aware workload scheduling
+* [ ] Custom hardware (e.g., own GPU clusters)
+
+## Security
+
+**Required before launch:**
+
+* [ ] SSO/SAML for enterprise customers
+* [ ] MFA for all staff (WebAuthn preferred)
+* [ ] Encryption at rest (KMS-managed keys)
+* [ ] Encryption in transit (TLS 1.3)
+* [ ] Row-level security for tenant isolation
+* [ ] Secret management (Vault or equivalent)
+* [ ] Audit logging for all data access
+* [ ] WAF and DDoS protection
+* [ ] Vulnerability scanning in CI
+* [ ] Dependency pinning and SBOM
+* [ ] Incident response plan
+* [ ] Data retention and deletion policy
+* [ ] GDPR data subject request process
+
+**Required before scale:**
+
+* [ ] SOC 2 Type II in progress
+* [ ] Penetration test completed
+* [ ] Just-in-time access for production
+* [ ] Per-tenant encryption keys (enterprise tier)
+* [ ] Egress proxy with allowlist
+* [ ] Container image signing and verification
+* [ ] Supply chain attestation (SLSA L3+)
+* [ ] Security information and event management (SIEM)
+* [ ] Threat model for each service
+* [ ] Red team exercise completed
+
+**Nice to have:**
+
+* [ ] FedRAMP authorization
+* [ ] Confidential computing for sensitive workloads
+* [ ] Zero-trust architecture (beyond mTLS)
+* [ ] AI-specific security: prompt injection defense, model extraction detection, output safety classifiers in production
+
+## Reliability
+
+**Required before launch:**
+
+* [ ] SLOs defined for all customer-facing services
+* [ ] Error budgets tracked
+* [ ] Runbooks for top 10 failure modes
+* [ ] On-call rotation with paging
+* [ ] Status page
+* [ ] Automated retries with backoff and jitter
+* [ ] Idempotency keys on all mutating APIs
+* [ ] Dead letter queues with monitoring
+* [ ] Circuit breakers on external dependencies
+* [ ] Graceful shutdown (SIGTERM handling, drain connections)
+* [ ] Health check endpoints (liveness + readiness)
+* [ ] Backups tested with restore drill
+
+**Required before scale:**
+
+* [ ] Multi-region failover tested
+* [ ] Chaos engineering exercises (quarterly)
+* [ ] Disaster recovery test (RPO/RTO verified)
+* [ ] Graceful degradation for all features
+* [ ] Per-tenant circuit breakers
+* [ ] Bulkhead pattern (resource isolation per tenant)
+* [ ] Load tests at 10x expected peak
+* [ ] Capacity planning with 6-month horizon
+
+**Nice to have:**
+
+* [ ] Automated rollback on SLO breach
+* [ ] Progressive delivery (canary, blue-green) for all services
+* [ ] Cell-based failover
+* [ ] Predictive auto-scaling
+
+## Scalability
+
+**Required before launch:**
+
+* [ ] Stateless services (session state externalized)
+* [ ] Horizontal autoscaling configured
+* [ ] Connection pooling (PgBouncer)
+* [ ] Read replicas for read-heavy queries
+* [ ] Pagination on all list APIs (cursor-based)
+* [ ] Async processing for long-running operations
+* [ ] Caching strategy defined (cache invalidation rules documented)
+
+**Required before scale:**
+
+* [ ] Database sharding strategy decided and documented
+* [ ] Per-tenant data partitioning
+* [ ] Vector index sharding
+* [ ] Event streaming (Kafka) for decoupling
+* [ ] Workflow orchestration (Temporal)
+* [ ] Per-tenant rate limiting at gateway
+* [ ] GPU fair-share scheduler
+* [ ] Cost allocation per tenant
+
+**Nice to have:**
+
+* [ ] Cell-based architecture
+* [ ] Globally distributed database
+* [ ] Predictive capacity management
+* [ ] Multi-model routing for cost optimization
+
+## Operations
+
+**Required before launch:**
+
+* [ ] CI/CD pipeline with automated tests
+* [ ] Deployment process documented
+* [ ] Rollback procedure tested
+* [ ] On-call schedule and escalation paths
+* [ ] Incident response process documented
+* [ ] Postmortem template and process
+* [ ] Change management process
+* [ ] Internal documentation (Confluence/Notion/Backstage)
+* [ ] Customer support tooling
+* [ ] Feature flag system
+* [ ] Maintenance window process
+
+**Required before scale:**
+
+* [ ] Service catalog (Backstage)
+* [ ] Internal developer platform (golden paths)
+* [ ] SRE engagement model with product teams
+* [ ] FinOps practice (cost monitoring, optimization)
+* [ ] Capacity planning process
+* [ ] Vendor management process
+* [ ] On-call training program
+* [ ] Incident review committee
+
+**Nice to have:**
+
+* [ ] Platform engineering team with internal product mindset
+* [ ] Developer productivity metrics
+* [ ] Internal hack days for reliability improvements
+
+## Documentation
+
+**Required before launch:**
+
+* [ ] Architecture diagrams (C4 model)
+* [ ] Service ownership documented (who owns what)
+* [ ] API documentation (OpenAPI/Protobuf)
+* [ ] Runbooks for top alerts
+* [ ] Incident response playbook
+* [ ] On-call handbook
+* [ ] Customer-facing status page
+* [ ] Data processing documentation (for GDPR)
+* [ ] Security whitepaper (for enterprise sales)
+
+**Required before scale:**
+
+* [ ] Architecture decision records (ADRs)
+* [ ] Service-level documentation (SLAs, dependencies, runbooks)
+* [ ] Disaster recovery runbook
+* [ ] Capacity planning documentation
+* [ ] Compliance documentation (SOC 2, ISO 27001)
+* [ ] Threat models per service
+* [ ] Data flow diagrams
+* [ ] Model cards for AI models
+
+**Nice to have:**
+
+* [ ] Internal engineering blog
+* [ ] Public postmortems (for transparency)
+* [ ] Customer-facing reliability reports
+
+## Testing
+
+**Required before launch:**
+
+* [ ] Unit tests (>80% coverage on business logic)
+* [ ] Integration tests for critical paths
+* [ ] E2E tests for top user journeys
+* [ ] Migration tests on production-sized data
+* [ ] Security tests (SAST, DAST, dependency scanning)
+* [ ] Smoke tests post-deploy
+* [ ] Backup restore test
+
+**Required before scale:**
+
+* [ ] Contract tests between all services
+* [ ] Load tests at expected peak
+* [ ] Stress tests at 10x peak
+* [ ] Chaos tests (quarterly)
+* [ ] Disaster recovery tests (quarterly)
+* [ ] Adversarial tests (prompt injection, model extraction)
+* [ ] Regression tests for all fixed bugs
+* [ ] Performance regression tests in CI
+
+**Nice to have:**
+
+* [ ] Continuous performance benchmarking
+* [ ] Mutation testing
+* [ ] Property-based testing
+* [ ] Formal verification for critical components (billing, auth)
+
+## Compliance
+
+**Required before launch:**
+
+* [ ] Privacy policy and terms of service (legal-reviewed)
+* [ ] Data processing addendum (DPA)
+* [ ] GDPR data subject request process
+* [ ] Data retention policy
+* [ ] Subprocessor list
+* [ ] Cookie policy and consent
+* [ ] PCI DSS scope documented (or SAQ-A via Stripe)
+
+**Required before scale:**
+
+* [ ] SOC 2 Type II audit (annual)
+* [ ] ISO 27001 certification
+* [ ] HIPAA compliance (if applicable)
+* [ ] Data residency (EU region) if serving EU customers
+* [ ] AI impact assessments (EU AI Act)
+* [ ] Model documentation (model cards)
+* [ ] Data lineage documentation
+* [ ] Records of processing activities (RoPA)
+
+**Nice to have:**
+
+* [ ] FedRAMP authorization
+* [ ] ISO 27701 (privacy)
+* [ ] SOC 3 for public trust
+* [ ] Continuous compliance monitoring (Vanta/Drata)
+
+---
+
+# Conclusion: Prototype vs. Production-Grade Platform
+
+A prototype answers: *"Can we build this?"*
+A production-grade platform answers: *"Can we operate this — at scale, under attack, during outages, across regions, for years, with auditors watching, while the team turns over, without losing customer data or trust?"*
+
+**The differentiators are not glamorous:**
+
+1. **Discipline over heroism.** Production systems run on documented processes, not on-call heroes. Runbooks, SLOs, error budgets, and blameless postmortems are the operating system of a mature platform.
+
+2. **Defense in depth.** No single layer is trusted. Tenant isolation is enforced at the database (RLS), the application (tenant_id filtering), the network (policies), and the encryption layer (per-tenant keys). A failure in one layer doesn't compromise customers.
+
+3. **Graceful degradation as a first-class feature.** Every feature has a documented fallback. Customers see "search is in limited mode," not a 500. The system fails *predictably*, not catastrophically.
+
+4. **Observability is not optional.** You cannot operate what you cannot see. Metrics, logs, traces, and profiles are treated as production-critical infrastructure with their own SLOs. The observability pipeline has higher availability requirements than the services it observes.
+
+5. **Security is continuous, not a checkpoint.** Not an annual pen test — continuous scanning, signed artifacts, supply chain attestation, just-in-time access, and adversarial testing embedded in CI/CD.
+
+6. **Multi-tenancy is architectural, not incidental.** Tenant isolation, per-tenant quotas, noisy-neighbor protection, and per-tenant cost allocation are designed in from day one. Retrofitting them is among the most expensive migrations a platform will ever undertake.
+
+7. **Data is the asset; protect it accordingly.** Backups are tested, not assumed. Migrations are reversible. Audit logs are immutable. PII is encrypted at the field level. Data retention and deletion are automated and verifiable.
+
+8. **AI introduces new failure modes that require new defenses.** Prompt injection, model drift, embedding model upgrades requiring full reindexes, GPU cost explosion, model quality regression — these are first-class concerns with dedicated monitoring, testing, and governance.
+
+9. **The platform team is a product team.** Internal developer platform, golden paths, service catalog, and self-service tooling are treated as products with users (engineers) and roadmaps. Friction in the developer experience is a P1 bug.
+
+10. **Long-term thinking compounds.** Every shortcut — a hardcoded value, a missing tenant_id, an untested backup, an unaudited admin action — is debt that compounds. Production-grade platforms pay this debt continuously, not in a "cleanup sprint" that never comes.
+
+**The ultimate test:** On the worst day of the platform's life — a regional outage during a security incident while a major customer's contract renewal is pending — does the system degrade gracefully, does the team respond calmly with runbooks, does the customer's data remain intact, and does trust survive?
+
+A prototype hopes yes. A production-grade platform proves yes — repeatedly, measurably, and continuously.
+
+---
+
+*This document is a living reference. It should be reviewed quarterly, updated as the platform evolves, and treated as the standard against which every new service, feature, and architectural decision is evaluated. Production readiness is not a destination; it is a practice.*

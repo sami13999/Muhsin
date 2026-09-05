@@ -1,0 +1,74 @@
+{
+  "dashboard": {
+    "title": "MUSHIN Security Posture",
+    "tags": ["mushin", "security"],
+    "timezone": "utc",
+    "panels": [
+      {
+        "title": "Workspace Mismatch Attempts",
+        "type": "timeseries",
+        "targets": [{
+          "expr": "rate(mushin_authz_workspace_mismatch_total[5m])"
+        }],
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow", "value": 0.1 },
+            { "color": "red", "value": 1 }
+          ]
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+      },
+      {
+        "title": "Webhook Signature Failures",
+        "type": "timeseries",
+        "targets": [{
+          "expr": "rate(mushin_webhook_signature_failures_total[5m])",
+          "legendFormat": "{{source}}"
+        }],
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow", "value": 0.5 },
+            { "color": "red", "value": 2 }
+          ]
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+      },
+      {
+        "title": "Rate Limit Blocks",
+        "type": "timeseries",
+        "targets": [{
+          "expr": "rate(mushin_rate_limit_blocked_total[5m])"
+        }],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+      },
+      {
+        "title": "Consent Gate Blocks",
+        "type": "timeseries",
+        "targets": [{
+          "expr": "rate(mushin_consent_last_gate_blocks_total[5m])"
+        }],
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow", "value": 10 },
+            { "color": "red", "value": 20 }
+          ]
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+      },
+      {
+        "title": "Audit Log Events",
+        "type": "timeseries",
+        "targets": [{
+          "expr": "rate(mushin_audit_events_total[5m])",
+          "legendFormat": "{{action}}"
+        }],
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 }
+      }
+    ],
+    "time": { "from": "now-1h", "to": "now" },
+    "refresh": "30s"
+  }
+}
