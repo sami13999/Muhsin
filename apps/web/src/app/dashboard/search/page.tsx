@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import SearchResultsGrid from '@/components/search/SearchResultsGrid';
 import SearchResultsTable from '@/components/search/SearchResultsTable';
 import SearchFilters from '@/components/search/SearchFilters';
-import InlineLiveSearchProgress, { PipelineStats } from '@/components/search/InlineLiveSearchProgress';
 import CreatorProfilePanel from '@/components/CreatorProfilePanel';
 import { useToast } from '@/lib/toast';
 import { api } from '@/lib/api';
@@ -37,11 +36,8 @@ export default function SearchPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null);
   
-  // Inline Live Search Execution States
+  // Live Search Loading State
   const [isLiveRunning, setIsLiveRunning] = useState(false);
-  const [liveStepIndex, setLiveStepIndex] = useState(0);
-  const [liveProgress, setLiveProgress] = useState(0);
-  const [liveStats, setLiveStats] = useState<PipelineStats | null>(null);
   
   const [filterCity, setFilterCity] = useState('Karachi');
   const [filterFollowers, setFilterFollowers] = useState('100K-1M');
@@ -138,39 +134,12 @@ export default function SearchPage() {
 
     deductCredits(cost);
     setIsLiveRunning(true);
-    setLiveStats(null);
-    setLiveStepIndex(0);
-    setLiveProgress(15);
 
-    // Stage 1: AI Query Expansion
-    await new Promise((r) => setTimeout(r, 450));
-    setLiveStepIndex(1);
-    setLiveProgress(35);
-
-    // Stage 2: Serper SERP Multi-Query Scan
-    await new Promise((r) => setTimeout(r, 500));
-    setLiveStepIndex(2);
-    setLiveProgress(60);
-
-    // Stage 3 & 4: Deduplication & Apify Scrape API Call
     let fetchedData: any[] = [];
-    let stats: PipelineStats | null = null;
     try {
       const res = await api.searchCreatorsLive(query);
       if (res && res.data) {
         fetchedData = res.data;
-        if (res.pipelineStages) {
-          stats = {
-            aiQueryExpansion: res.pipelineStages.aiQueryExpansion || [],
-            serperQueriesExecuted: res.pipelineStages.serperQueriesExecuted || 3,
-            duplicatesFiltered: res.pipelineStages.duplicatesFiltered || 4,
-            apifyUrlsScraped: res.pipelineStages.apifyUrlsScraped || fetchedData.length,
-            creatorsPersistedDb: res.pipelineStages.creatorsPersistedDb || fetchedData.length,
-            mushinRankingApplied: res.pipelineStages.mushinRankingApplied ?? true,
-            latencyMs: res.executionStats?.latencyMs || 1420,
-            creditsDeducted: cost,
-          };
-        }
       }
     } catch {
       // Fallback live results if backend API offline
@@ -180,25 +149,7 @@ export default function SearchPage() {
         { creatorId: 'cr-live-003', displayName: 'Maria Soomro', primaryHandle: '@mariasoomro', platform: 'instagram', followerCount: 185000, engagementRate: 5.9, _rankingScore: 94, city: 'Islamabad', niche: 'Beauty & Lifestyle', iqScore: 91, verified: true },
         { creatorId: 'cr-live-004', displayName: 'Usman Ali', primaryHandle: '@usman.tech', platform: 'tiktok', followerCount: 430000, engagementRate: 9.1, _rankingScore: 93, city: 'Karachi', niche: 'Tech & Gaming', iqScore: 90, verified: true },
       ];
-      stats = {
-        aiQueryExpansion: [`site:instagram.com ${query}`, `site:tiktok.com ${query}`, `site:youtube.com ${query}`],
-        serperQueriesExecuted: 3,
-        duplicatesFiltered: 4,
-        apifyUrlsScraped: fetchedData.length,
-        creatorsPersistedDb: fetchedData.length,
-        mushinRankingApplied: true,
-        latencyMs: 1420,
-        creditsDeducted: cost,
-      };
     }
-
-    setLiveStepIndex(3);
-    setLiveProgress(85);
-    await new Promise((r) => setTimeout(r, 450));
-
-    setLiveStepIndex(4);
-    setLiveProgress(100);
-    await new Promise((r) => setTimeout(r, 350));
 
     if (fetchedData.length > 0) {
       const mapped: SearchCreatorItem[] = fetchedData.map((c, idx) => ({
@@ -218,11 +169,10 @@ export default function SearchPage() {
       setIsLiveActive(true);
     }
 
-    setLiveStats(stats);
     setIsLiveRunning(false);
     toast.success(
       'Live Search Complete',
-      `Discovered & scraped live creators. Persisted ${fetchedData.length} new records to Database & Brain 1.`
+      `Backend discovered & persisted ${fetchedData.length} live creator profiles.`
     );
   };
 
@@ -337,15 +287,7 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* Non-blocking Inline Brain 2 Live Search Progress & Telemetry Banner */}
-      <InlineLiveSearchProgress
-        isRunning={isLiveRunning}
-        stepIndex={liveStepIndex}
-        progress={liveProgress}
-        currentQuery={queryText}
-        stats={liveStats}
-        onClose={() => setLiveStats(null)}
-      />
+
 
       {/* Row 4: Results & Grid/Table rendering */}
       {simulateError ? (
