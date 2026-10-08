@@ -110,7 +110,7 @@ export default function ListsGridView({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '6px' }}>
             <path d="M12 5v14M5 12h14" />
           </svg>
-          + New list
+          New list
         </button>
       </div>
 

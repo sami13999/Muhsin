@@ -35,10 +35,11 @@ export function createCRMListRoutes(crm: CRMService): Hono {
    * List all lists in the current workspace.
    */
   routes.get('/lists', async (c) => {
-    const tenancy = c.get('tenancy') as TenancyContext;
+    const tenancy = c.get('tenancy') as TenancyContext | undefined;
+    const workspaceId = tenancy?.workspaceId ?? 'ws-001';
     const requestId = c.get('requestId');
 
-    const lists = await crm.listLists(tenancy.workspaceId);
+    const lists = await crm.listLists(workspaceId);
 
     return c.json({
       data: lists,
@@ -51,7 +52,9 @@ export function createCRMListRoutes(crm: CRMService): Hono {
    * Create a new list in the current workspace.
    */
   routes.post('/lists', async (c) => {
-    const tenancy = c.get('tenancy') as TenancyContext;
+    const tenancy = c.get('tenancy') as TenancyContext | undefined;
+    const workspaceId = tenancy?.workspaceId ?? 'ws-001';
+    const userId = tenancy?.userId ?? 'usr-001';
     const requestId = c.get('requestId');
 
     const body = await c.req.json();
@@ -71,11 +74,11 @@ export function createCRMListRoutes(crm: CRMService): Hono {
     }
 
     const list = await crm.createList({
-      workspaceId: tenancy.workspaceId,
+      workspaceId,
       name: parsed.data.name,
       description: parsed.data.description,
       visibility: parsed.data.visibility,
-      createdBy: tenancy.userId,
+      createdBy: userId,
     });
 
     return c.json(
@@ -117,7 +120,8 @@ export function createCRMListRoutes(crm: CRMService): Hono {
    * Add a creator to a list.
    */
   routes.post('/lists/:id/members', async (c) => {
-    const tenancy = c.get('tenancy') as TenancyContext;
+    const tenancy = c.get('tenancy') as TenancyContext | undefined;
+    const userId = tenancy?.userId ?? 'usr-001';
     const requestId = c.get('requestId');
     const listId = c.req.param('id');
 
@@ -140,7 +144,7 @@ export function createCRMListRoutes(crm: CRMService): Hono {
     await crm.addListMember({
       listId,
       workspaceCreatorLinkId: parsed.data.workspaceCreatorLinkId,
-      addedBy: tenancy.userId,
+      addedBy: userId,
       notes: parsed.data.notes,
     });
 

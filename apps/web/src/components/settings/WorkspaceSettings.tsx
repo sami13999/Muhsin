@@ -2,27 +2,52 @@
 
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/lib/toast';
+import { api } from '@/lib/api';
 
 export default function WorkspaceSettings() {
   const toast = useToast();
-  const [name, setName] = useState('MUSHIN Karachi');
-  const [slug, setSlug] = useState('mushin-karachi');
+  const [name, setName] = useState('MUSHIN Workspace');
+  const [slug, setSlug] = useState('mushin-workspace');
   const [currency, setCurrency] = useState('PKR');
   const [region, setRegion] = useState('Pakistan');
 
   useEffect(() => {
-    const saved = localStorage.getItem('mushin_workspace_settings');
-    if (saved) {
+    let mounted = true;
+
+    async function loadWorkspace() {
       try {
-        const parsed = JSON.parse(saved);
-        if (parsed.name) setName(parsed.name);
-        if (parsed.slug) setSlug(parsed.slug);
-        if (parsed.currency) setCurrency(parsed.currency);
-        if (parsed.region) setRegion(parsed.region);
-      } catch (err) {
-        console.error(err);
+        const res = await api.listWorkspaces();
+        if (mounted && res?.data?.[0]?.workspace) {
+          const ws = res.data[0].workspace;
+          setName(ws.name || 'MUSHIN Workspace');
+          setSlug(ws.slug || 'mushin-workspace');
+          return;
+        }
+      } catch {
+        // Fallback to local storage if API is offline
+      }
+
+      if (mounted) {
+        const saved = localStorage.getItem('mushin_workspace_settings');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.name) setName(parsed.name);
+            if (parsed.slug) setSlug(parsed.slug);
+            if (parsed.currency) setCurrency(parsed.currency);
+            if (parsed.region) setRegion(parsed.region);
+          } catch (err) {
+            console.error(err);
+          }
+        }
       }
     }
+
+    loadWorkspace();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleSave = (e: React.FormEvent) => {

@@ -9,6 +9,14 @@ interface CreateCampaignModalProps {
   onCreate: (campaignData: Partial<Campaign>) => void;
 }
 
+const COVER_PRESETS = [
+  { id: 'festive', label: 'Festive / Eid', url: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?w=400&auto=format&fit=crop&q=80' },
+  { id: 'beauty', label: 'Beauty & Cosmetics', url: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400&auto=format&fit=crop&q=80' },
+  { id: 'bridal', label: 'Bridal Couture', url: 'https://images.unsplash.com/photo-1594552072238-b8a33785b261?w=400&auto=format&fit=crop&q=80' },
+  { id: 'fitness', label: 'Fitness & Sports', url: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=400&auto=format&fit=crop&q=80' },
+  { id: 'tech', label: 'Consumer Tech', url: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=400&auto=format&fit=crop&q=80' }
+];
+
 export default function CreateCampaignModal({ isOpen, onClose, onCreate }: CreateCampaignModalProps) {
   const [name, setName] = useState('');
   const [goal, setGoal] = useState('');
@@ -18,7 +26,23 @@ export default function CreateCampaignModal({ isOpen, onClose, onCreate }: Creat
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [status, setStatus] = useState<'draft' | 'active'>('draft');
+  const [coverUrl, setCoverUrl] = useState(COVER_PRESETS[0].url);
+  const [customCover, setCustomCover] = useState('');
   const [error, setError] = useState('');
+  const coverFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleCoverFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setCustomCover(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -41,6 +65,8 @@ export default function CreateCampaignModal({ isOpen, onClose, onCreate }: Creat
       dateStr = `From ${new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
     }
 
+    const finalCover = customCover.trim() || coverUrl;
+
     onCreate({
       name: name.trim(),
       goal: goal.trim() || 'Drive campaign objectives & creator activation.',
@@ -52,7 +78,8 @@ export default function CreateCampaignModal({ isOpen, onClose, onCreate }: Creat
       niche,
       owner,
       dates: dateStr,
-      status
+      status,
+      coverUrl: finalCover
     });
 
     // Reset
@@ -64,6 +91,8 @@ export default function CreateCampaignModal({ isOpen, onClose, onCreate }: Creat
     setStartDate('');
     setEndDate('');
     setStatus('draft');
+    setCoverUrl(COVER_PRESETS[0].url);
+    setCustomCover('');
     setError('');
     onClose();
   };
@@ -196,6 +225,121 @@ export default function CreateCampaignModal({ isOpen, onClose, onCreate }: Creat
                 resize: 'none'
               }}
             />
+          </div>
+
+          {/* Campaign Cover / Profile Picture Selection */}
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#1e293b', marginBottom: '6px' }}>
+              Campaign Cover / Profile Picture
+            </label>
+
+            {/* Hidden File Input for Camera & Gallery Upload */}
+            <input
+              type="file"
+              ref={coverFileInputRef}
+              accept="image/*"
+              capture="environment"
+              onChange={handleCoverFileUpload}
+              style={{ display: 'none' }}
+            />
+
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '6px' }}>
+              {COVER_PRESETS.map((p) => {
+                const isSelected = !customCover && coverUrl === p.url;
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => {
+                      setCoverUrl(p.url);
+                      setCustomCover('');
+                    }}
+                    style={{
+                      border: isSelected ? '2px solid #4f46e5' : '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      width: '72px',
+                      flexShrink: 0,
+                      boxShadow: isSelected ? '0 0 0 2px rgba(79,70,229,0.2)' : 'none',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <img src={p.url} alt={p.label} style={{ width: '100%', height: '48px', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ fontSize: '9px', fontWeight: 600, textAlign: 'center', padding: '2px 0', background: isSelected ? '#4f46e5' : '#f8fafc', color: isSelected ? '#ffffff' : '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {p.label.split(' ')[0]}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Local Device Attachment Options (Camera & Gallery) */}
+            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (coverFileInputRef.current) {
+                      coverFileInputRef.current.setAttribute('capture', 'environment');
+                      coverFileInputRef.current.click();
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    background: '#0f172a',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  📷 Camera / Gallery
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (coverFileInputRef.current) {
+                      coverFileInputRef.current.removeAttribute('capture');
+                      coverFileInputRef.current.click();
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    border: '1px solid #cbd5e1',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  📁 Choose File
+                </button>
+              </div>
+
+              {customCover && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f8fafc', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <img src={customCover} alt="Attached preview" style={{ width: '36px', height: '36px', borderRadius: '4px', objectFit: 'cover' }} />
+                  <span style={{ fontSize: '11px', color: '#334155', fontWeight: 600, flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    Custom Image Attached
+                  </span>
+                  <button type="button" onClick={() => setCustomCover('')} style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: '14px', fontWeight: 700 }}>✕</button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

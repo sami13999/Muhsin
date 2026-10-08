@@ -4,3 +4,4 @@ export * from './paddle/index.js';
 export * from './serper/adapter.js';
 export * from './apify/adapter.js';
 export * from './resend/adapter.js';
+export * from './whatsapp/adapter.js';

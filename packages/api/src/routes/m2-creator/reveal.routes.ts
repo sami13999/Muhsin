@@ -44,12 +44,11 @@ export function createRevealRoutes(db: Database): Hono {
   const routes = new Hono();
 
   /**
-   * POST /creators/:id/reveal-contact
+   * POST /creators/:id/reveal-contact & POST /creators/:id/reveal
    * Reveal creator contact information.
-   *
    * SAFETY: minor_signal = true → BLOCKED. No exceptions.
    */
-  routes.post('/:id/reveal-contact', revealRateLimit, async (c) => {
+  const handleReveal = async (c: any) => {
     const requestId = c.get('requestId');
     const tenancy = c.get('tenancy');
     const creatorId = c.req.param('id') as string;
@@ -248,7 +247,10 @@ export function createRevealRoutes(db: Database): Hono {
       },
       meta: { request_id: requestId },
     });
-  });
+  };
+
+  routes.post('/creators/:id/reveal-contact', revealRateLimit, handleReveal);
+  routes.post('/creators/:id/reveal', revealRateLimit, handleReveal);
 
   return routes;
 }

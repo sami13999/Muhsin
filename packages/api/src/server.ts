@@ -19,11 +19,13 @@ async function main() {
 
   const app = createApp();
 
+  const host = process.env['HOST'] ?? '0.0.0.0';
   const server = serve({
     fetch: app.fetch,
     port,
+    hostname: host,
   }, (info) => {
-    logger.info(`MUSHIN API listening on http://localhost:${info.port}`);
+    logger.info(`MUSHIN API listening on http://${host}:${info.port}`);
   });
 
   // ── Graceful Shutdown ──────────────────────────────────────

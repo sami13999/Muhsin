@@ -14,8 +14,6 @@ import type { Database } from '@mushin/database';
 import { creatorRepository } from '@mushin/database';
 import { emitEvent, EVENT_TYPES } from '@mushin/events';
 
-const { eraseCreator, isCreatorErased, isHandleBlocked } = creatorRepository;
-
 const erasure = new Hono();
 
 /**
@@ -40,7 +38,7 @@ erasure.post('/:id/erasure', async (c) => {
 
   // Execute erasure
   const db = c.get('db');
-  const result = await eraseCreator(db, creatorId);
+  const result = await creatorRepository.eraseCreator(db, creatorId);
 
   if (result === 'not_found') {
     return c.json(
@@ -88,7 +86,7 @@ erasure.get('/:id/erasure/status', async (c) => {
   const creatorId = c.req.param('id');
   const db = c.get('db');
 
-  const erased = await isCreatorErased(db, creatorId);
+  const erased = await creatorRepository.isCreatorErased(db, creatorId);
 
   return c.json({ creatorId, erased });
 });
@@ -102,7 +100,7 @@ erasure.get('/handle/:handle/block-status', async (c) => {
   const platform = c.req.query('platform') ?? 'instagram';
   const db = c.get('db');
 
-  const blocked = await isHandleBlocked(db, handle, platform);
+  const blocked = await creatorRepository.isHandleBlocked(db, handle, platform);
 
   return c.json({ handle, platform, blocked });
 });

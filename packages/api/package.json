@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run integration billing.integration search-concurrency.integration tenant-isolation.integration"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",

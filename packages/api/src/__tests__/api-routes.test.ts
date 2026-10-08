@@ -28,6 +28,11 @@ vi.mock('@mushin/database', () => ({
     findById: vi.fn(),
     getMembership: vi.fn(),
   },
+  creatorRepository: {
+    eraseCreator: vi.fn(),
+    isCreatorErased: vi.fn(),
+    isHandleBlocked: vi.fn(),
+  },
 }));
 
 // Mock adapters
@@ -41,6 +46,10 @@ vi.mock('@mushin/adapters', () => ({
     call: vi.fn(),
   }),
   createPaddleAdapter: vi.fn().mockReturnValue(null),
+  createWhatsAppAdapter: vi.fn().mockReturnValue({
+    sendMessage: vi.fn().mockResolvedValue({ success: true, messageId: 'waba-test-123' }),
+    health: vi.fn().mockResolvedValue({ status: 'healthy' }),
+  }),
 }));
 
 // Mock events

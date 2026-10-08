@@ -3,7 +3,17 @@
  * Handles authentication, workspace context, and error handling.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+function getApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    return `${protocol}//${hostname}:3000`;
+  }
+  return 'http://localhost:3000';
+}
 
 export interface APIError {
   code: string;
@@ -47,15 +57,29 @@ class APIClient {
       headers['X-Workspace-ID'] = this.workspaceId;
     }
 
-    const response = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const baseUrl = getApiBase();
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (err: any) {
+      throw new Error(
+        err?.message === 'Failed to fetch'
+          ? `Cannot connect to MUSHIN API server at ${baseUrl}. Please ensure the backend is running.`
+          : (err?.message || 'Network request failed'),
+      );
+    }
 
     if (!response.ok) {
-      const error = await response.json() as { error: APIError };
-      throw new Error(error.error?.message || `API error: ${response.status}`);
+      let errorMessage = `API error: ${response.status}`;
+      try {
+        const error = (await response.json()) as { error?: APIError; message?: string };
+        errorMessage = error.error?.message || error.message || errorMessage;
+      } catch {}
+      throw new Error(errorMessage);
     }
 
     // Handle 204 No Content
@@ -156,6 +180,56 @@ class APIClient {
     }>('GET', url);
   }
 
+  async searchCreatorsNL(query: string) {
+    return this.request<{
+      interpretation: {
+        chips: Array<{ label: string; value: string; field: string }>;
+        raw: string;
+        confidence: number;
+        cached: boolean;
+      };
+      results: Array<{
+        creatorId: string;
+        displayName: string;
+        primaryHandle: string;
+        platform: string;
+        followerCount: number;
+        engagementRate: number;
+        _rankingScore: number;
+        _explanation?: Record<string, unknown>;
+      }>;
+      total: number;
+      meta: { request_id: string };
+    }>('POST', '/api/v1/creators/search/nl', { query });
+  }
+
+  async searchCreatorsLive(query: string, options?: { platform?: string; niche?: string; location?: string }) {
+    return this.request<{
+      data: Array<{
+        creatorId: string;
+        displayName: string;
+        primaryHandle: string;
+        platform: string;
+        followerCount: number;
+        engagementRate: number;
+        _rankingScore: number;
+        city?: string;
+        niche?: string;
+        iqScore?: number;
+        verified?: boolean;
+        isLive?: boolean;
+      }>;
+      total: number;
+      executionStats?: {
+        scrapedEndpoints: string[];
+        latencyMs: number;
+        creditsDeducted: number;
+        freshness: string;
+      };
+      meta: { request_id: string; timestamp: string };
+    }>('POST', '/api/v1/creators/search/live', { query, ...options });
+  }
+
   async getTrendingCreators(options?: { platform?: string; niche?: string; limit?: number }) {
     const params = new URLSearchParams();
     if (options?.platform) params.set('platform', options.platform);
@@ -191,6 +265,20 @@ class APIClient {
     }>('GET', `/api/v1/creators/${creatorId}`);
   }
 
+  async revealContact(creatorId: string) {
+    return this.request<{
+      data: {
+        creatorId: string;
+        revealed: boolean;
+        contactDetails: {
+          email?: string;
+          phone?: string;
+          whatsapp?: string;
+        };
+      };
+    }>('POST', `/api/v1/creators/${creatorId}/reveal-contact`);
+  }
+
   // ── CRM ─────────────────────────────────────────────────────
 
   async listLists() {
@@ -213,6 +301,119 @@ class APIClient {
     }>('POST', '/api/v1/lists', { name, description });
   }
 
+  // ── Campaigns ───────────────────────────────────────────────
+
+  async listCampaigns() {
+    return this.request<{
+      data: Array<{
+        id: string;
+        name: string;
+        status: 'active' | 'draft' | 'completed' | 'paused';
+        budget: string;
+        spent: string;
+        creatorsCount: number;
+        roas: string;
+        progress: number;
+        niche: string;
+        owner: string;
+        dates: string;
+        goal: string;
+        createdAt: string;
+      }>;
+    }>('GET', '/api/v1/campaigns');
+  }
+
+  async createCampaign(payload: {
+    name: string;
+    goal?: string;
+    budget?: string;
+    niche?: string;
+    owner?: string;
+    dates?: string;
+    status?: 'draft' | 'active' | 'paused' | 'completed';
+  }) {
+    return this.request<{
+      data: {
+        campaign: {
+          id: string;
+          name: string;
+          status: 'active' | 'draft' | 'completed' | 'paused';
+          budget: string;
+          spent: string;
+          creatorsCount: number;
+          roas: string;
+          progress: number;
+          niche: string;
+          owner: string;
+          dates: string;
+          goal: string;
+          createdAt: string;
+        };
+      };
+    }>('POST', '/api/v1/campaigns', payload);
+  }
+
+  async getCampaign(id: string) {
+    return this.request<{
+      data: {
+        campaign: {
+          id: string;
+          name: string;
+          status: 'active' | 'draft' | 'completed' | 'paused';
+          budget: string;
+          spent: string;
+          creatorsCount: number;
+          roas: string;
+          progress: number;
+          niche: string;
+          owner: string;
+          dates: string;
+          goal: string;
+          createdAt: string;
+        };
+      };
+    }>('GET', `/api/v1/campaigns/${id}`);
+  }
+
+  async updateCampaign(
+    id: string,
+    payload: Partial<{
+      name: string;
+      goal: string;
+      budget: string;
+      spent: string;
+      progress: number;
+      status: 'draft' | 'active' | 'paused' | 'completed';
+      niche: string;
+      owner: string;
+      dates: string;
+    }>,
+  ) {
+    return this.request<{
+      data: {
+        campaign: {
+          id: string;
+          name: string;
+          status: 'active' | 'draft' | 'completed' | 'paused';
+          budget: string;
+          spent: string;
+          creatorsCount: number;
+          roas: string;
+          progress: number;
+          niche: string;
+          owner: string;
+          dates: string;
+          goal: string;
+          createdAt: string;
+        };
+      };
+    }>('PATCH', `/api/v1/campaigns/${id}`, payload);
+  }
+
+  async deleteCampaign(id: string) {
+    return this.request<void>('DELETE', `/api/v1/campaigns/${id}`);
+  }
+
   // ── Analytics ───────────────────────────────────────────────
 
   async getWorkspaceAnalytics(period: string) {
@@ -225,6 +426,45 @@ class APIClient {
         };
       };
     }>('GET', `/api/v1/analytics?period=${period}`);
+  }
+
+  // ── Outreach ────────────────────────────────────────────────
+
+  async sendOutreachMessage(payload: {
+    channel: 'email' | 'whatsapp' | 'instagram_dm';
+    recipientContactId: string;
+    body: string;
+    subject?: string;
+    templateId?: string;
+  }) {
+    return this.request<{
+      data: { messageId: string; status: string; sentAt: string };
+    }>('POST', '/api/v1/outreach/messages', payload);
+  }
+
+  async enrollInSequence(payload: {
+    sequenceId: string;
+    recipientContactId: string;
+  }) {
+    return this.request<{
+      data: { enrollmentId: string; status: string; enrolledAt: string };
+    }>('POST', `/api/v1/outreach/sequences/${payload.sequenceId}/enroll`, {
+      recipientContactId: payload.recipientContactId,
+    });
+  }
+
+  // ── GDPR & Compliance ──────────────────────────────────────
+
+  async requestErasure(creatorId: string, reason: string) {
+    return this.request<{
+      data: { erasureRequestId: string; status: string; requestedAt: string };
+    }>('POST', `/api/v1/creators/${creatorId}/erasure`, { reason });
+  }
+
+  async getErasureStatus(creatorId: string) {
+    return this.request<{
+      data: { creatorId: string; status: string; erasedAt: string | null };
+    }>('GET', `/api/v1/creators/${creatorId}/erasure/status`);
   }
 
   // ── Health ──────────────────────────────────────────────────

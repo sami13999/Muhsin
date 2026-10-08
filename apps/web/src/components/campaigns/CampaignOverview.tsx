@@ -42,12 +42,32 @@ export default function CampaignOverview({
   const [pipelineCards, setPipelineCards] = useState<PipelineCard[]>([]);
 
   useEffect(() => {
-    if (campaign.id === 'camp-1') {
+    const roster = campaign.roster || [];
+    if (roster.length > 0) {
+      const cards: PipelineCard[] = roster.map(c => {
+        let mappedStage: PipelineCard['stage'] = 'prospect';
+        if (c.stage === 'shortlisted') mappedStage = 'prospect';
+        else if (c.stage === 'contacted') mappedStage = 'contacted';
+        else if (c.stage === 'negotiating') mappedStage = 'negotiating';
+        else if (c.stage === 'contracted' || c.stage === 'deliverable_submitted' || c.stage === 'completed') mappedStage = 'accepted';
+        
+        return {
+          id: c.id,
+          name: c.name,
+          stage: mappedStage,
+          fee: c.fee,
+          dueDate: 'Jul 20',
+          avatar: c.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+          handle: `${c.handle} • ${c.followers}`
+        };
+      });
+      setPipelineCards(cards);
+    } else if (campaign.id === 'camp-1') {
       setPipelineCards(EID_CARDS);
     } else {
       setPipelineCards([]);
     }
-  }, [campaign.id]);
+  }, [campaign]);
 
   const handleMoveCard = (cardId: string, targetStage: PipelineCard['stage']) => {
     setPipelineCards(pipelineCards.map((c) => (c.id === cardId ? { ...c, stage: targetStage } : c)));
@@ -59,7 +79,7 @@ export default function CampaignOverview({
       <CampaignDetailsTabs activeTab={activeTab} onChangeTab={setActiveTab} />
 
       {activeTab === 'overview' && <CampaignOverviewTab campaign={campaign} />}
-      {activeTab === 'creators' && <CreatorsTab />}
+      {activeTab === 'creators' && <CreatorsTab campaign={campaign} onUpdateCampaign={onUpdate} />}
       {activeTab === 'pipeline' && <PipelineTab pipelineCards={pipelineCards} onMoveCard={handleMoveCard} />}
       {activeTab === 'timeline' && <TimelineTab />}
       {activeTab === 'messages' && <MessagesTab />}

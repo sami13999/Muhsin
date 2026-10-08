@@ -780,6 +780,98 @@ html, body {
   }
 }
 
+/* ── 9. Universal Mobile & Tablet Responsiveness System ── */
+@media (max-width: 768px) {
+  /* Layout Padding & Container Bounds */
+  .dashboard-content-container {
+    padding: 16px 12px !important;
+  }
+
+  /* Search Page Responsive Controls */
+  .search-controls-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .search-controls-row input {
+    width: 100% !important;
+  }
+
+  .search-controls-row button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px 16px !important;
+    font-size: 13px !important;
+  }
+
+  .search-filter-pills-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  /* Responsive Grid Cards across Lists, Campaigns & Dashboard */
+  .responsive-cards-grid,
+  .campaigns-grid,
+  .lists-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  /* Modals & Dialogs on Mobile Phones & Tablets */
+  .modal-overlay,
+  .live-search-modal-overlay {
+    padding: 12px !important;
+    align-items: flex-end !important;
+  }
+
+  .modal-container,
+  .live-search-modal-container {
+    max-width: 100% !important;
+    width: 100% !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+  }
+
+  /* Tables horizontal touch scroll */
+  table {
+    min-width: 600px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-header {
+    padding: 0 10px !important;
+  }
+
+  /* Typography Scaling for Small Screen Phones */
+  h1 {
+    font-size: 22px !important;
+  }
+
+  h2 {
+    font-size: 18px !important;
+  }
+
+  h3 {
+    font-size: 16px !important;
+  }
+
+  /* Buttons Touch Target Minimum Height */
+  button, input, select {
+    min-height: 40px;
+  }
+
+  .credit-pill {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+  }
+}
+
+
 
 
 

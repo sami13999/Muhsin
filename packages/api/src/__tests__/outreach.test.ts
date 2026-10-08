@@ -73,10 +73,11 @@ describe('OutreachService', () => {
       expect(result.error).toContain('Creator not found');
     });
 
-    it('should return error for WhatsApp channel (not yet implemented)', async () => {
+    it('should return error for WhatsApp channel when no phone contact exists', async () => {
       mockDb.execute = vi.fn()
         .mockResolvedValueOnce([{ minor_signal: false, display_name: 'Test', primary_handle: '@test' }])
-        .mockResolvedValueOnce([{ subscription_plan_id: 'growth' }]);
+        .mockResolvedValueOnce([{ subscription_plan_id: 'growth' }])
+        .mockResolvedValueOnce([]); // No contact record
 
       const result = await service.sendMessage({
         workspaceId: 'ws-123',
@@ -87,6 +88,23 @@ describe('OutreachService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('WhatsApp');
+    });
+
+    it('should dispatch WhatsApp message when valid phone contact exists', async () => {
+      mockDb.execute = vi.fn()
+        .mockResolvedValueOnce([{ minor_signal: false, display_name: 'Test', primary_handle: '@test' }])
+        .mockResolvedValueOnce([{ subscription_plan_id: 'growth' }])
+        .mockResolvedValueOnce([{ value: '+923001234567' }]);
+
+      const result = await service.sendMessage({
+        workspaceId: 'ws-123',
+        creatorId: 'c-456',
+        channel: 'whatsapp',
+        body: 'Hello via WhatsApp!',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.messageId).toBeDefined();
     });
   });
 

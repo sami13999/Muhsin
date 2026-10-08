@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import ExportModal from '@/components/common/ExportModal';
+import { api } from '@/lib/api';
 
 interface LogItem {
   id: string;
@@ -76,6 +78,50 @@ const INITIAL_LOGS: LogItem[] = [
 export default function ActivityLogPage() {
   const [logs, setLogs] = useState<LogItem[]>(INITIAL_LOGS);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['search', 'event', 'credit', 'system']);
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadTelemetry() {
+      try {
+        const res = await api.getWorkspaceAnalytics('30d');
+        if (mounted && res?.data?.analytics) {
+          const telemetry = res.data.analytics;
+          if (telemetry.outreachMetrics || telemetry.creditUsage) {
+            const apiLogs: LogItem[] = [
+              {
+                id: `log-api-1`,
+                title: 'Outreach events logged',
+                subtitle: `${telemetry.outreachMetrics.sent} sent · ${telemetry.outreachMetrics.delivered} delivered`,
+                category: 'event',
+                time: 'Just now',
+                duration: '42ms'
+              },
+              {
+                id: `log-api-2`,
+                title: 'Credit ledger sync',
+                subtitle: `Total usage ${telemetry.creditUsage.total} credits`,
+                category: 'credit',
+                time: '1m ago',
+                creditsDeducted: telemetry.creditUsage.total
+              },
+              ...INITIAL_LOGS.slice(2)
+            ];
+            setLogs(apiLogs);
+          }
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    loadTelemetry();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const toggleCategory = (category: string) => {
     setSelectedCategories(prev => 
@@ -149,13 +195,39 @@ export default function ActivityLogPage() {
           <p style={{ color: '#64748b', fontSize: '14px', marginTop: '6px', margin: 0 }}>Real-time stream of searches, workspace events, credit deductions, and system events.</p>
         </div>
         
-        {/* Pulsing Live indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>
-          <span style={{ position: 'relative', display: 'flex', height: '8px', width: '8px' }}>
-            <span style={{ animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite', position: 'absolute', display: 'inline-flex', height: '100%', width: '100%', borderRadius: '50%', backgroundColor: '#22c55e', opacity: 0.75 }}></span>
-            <span style={{ position: 'relative', display: 'inline-flex', borderRadius: '50%', height: '8px', width: '8px', backgroundColor: '#22c55e' }}></span>
-          </span>
-          Live
+        {/* Pulsing Live indicator & Export */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>
+            <span style={{ position: 'relative', display: 'flex', height: '8px', width: '8px' }}>
+              <span style={{ animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite', position: 'absolute', display: 'inline-flex', height: '100%', width: '100%', borderRadius: '50%', backgroundColor: '#22c55e', opacity: 0.75 }}></span>
+              <span style={{ position: 'relative', display: 'inline-flex', borderRadius: '50%', height: '8px', width: '8px', backgroundColor: '#22c55e' }}></span>
+            </span>
+            Live
+          </div>
+          <button
+            onClick={() => setShowExportModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#ffffff',
+              border: '1px solid #cbd5e1',
+              color: '#0f172a',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Export Log
+          </button>
         </div>
       </div>
 
@@ -289,6 +361,22 @@ export default function ActivityLogPage() {
           )}
         </div>
       </div>
+
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        title="Export Activity Log"
+        entityName="mushin_activity_log"
+        defaultData={filteredLogs.map(l => ({
+          id: l.id,
+          category: l.category.toUpperCase(),
+          eventTitle: l.title,
+          details: l.subtitle,
+          timestamp: l.time,
+          creditsDeducted: l.creditsDeducted ? `${l.creditsDeducted} credits` : 'N/A',
+          duration: l.duration || 'N/A',
+        }))}
+      />
     </div>
   );
 }

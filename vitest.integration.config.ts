@@ -10,5 +10,6 @@ export default defineConfig({
     hookTimeout: 120000,
     pool: 'forks', // Isolate test files
     reporters: ['verbose'],
+    workspace: false,
   },
 });

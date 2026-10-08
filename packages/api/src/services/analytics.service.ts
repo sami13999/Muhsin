@@ -214,13 +214,22 @@ export class AnalyticsService {
     workspaceId: string,
     period: string,
   ): Promise<{ total: number; byCategory: Record<string, number> }> {
+    let dateFilter = sql`created_at >= NOW() - INTERVAL '30 days'`;
+    if (period === '7d') {
+      dateFilter = sql`created_at >= NOW() - INTERVAL '7 days'`;
+    } else if (period === '90d') {
+      dateFilter = sql`created_at >= NOW() - INTERVAL '90 days'`;
+    } else if (period === '30d' || period === 'current_month') {
+      dateFilter = sql`created_at >= NOW() - INTERVAL '30 days'`;
+    }
+
     const result = await this.db.execute(sql`
       SELECT
         entry_type,
         SUM(ABS(amount)) AS total
       FROM wp.credit_ledger_entry
       WHERE workspace_id = ${workspaceId}
-        AND period = ${period}
+        AND ${dateFilter}
         AND amount < 0
       GROUP BY entry_type
     `);
@@ -242,6 +251,15 @@ export class AnalyticsService {
     workspaceId: string,
     period: string,
   ): Promise<{ sent: number; delivered: number; opened: number; replied: number; bounced: number }> {
+    let dateFilter = sql`created_at >= NOW() - INTERVAL '30 days'`;
+    if (period === '7d') {
+      dateFilter = sql`created_at >= NOW() - INTERVAL '7 days'`;
+    } else if (period === '90d') {
+      dateFilter = sql`created_at >= NOW() - INTERVAL '90 days'`;
+    } else if (period === '30d' || period === 'current_month') {
+      dateFilter = sql`created_at >= NOW() - INTERVAL '30 days'`;
+    }
+
     const result = await this.db.execute(sql`
       SELECT
         COUNT(CASE WHEN event_type = 'outreach.message_sent' THEN 1 END) AS sent,
@@ -251,18 +269,17 @@ export class AnalyticsService {
         COUNT(CASE WHEN event_type = 'outreach.message_failed' THEN 1 END) AS bounced
       FROM wp.interaction_timeline
       WHERE workspace_id = ${workspaceId}
-        AND created_at >= ${period}-01::date
-        AND created_at < (${period}-01::date + INTERVAL '1 month')
+        AND ${dateFilter}
     `);
 
-    const row = result[0]!;
+    const row = result[0];
 
     return {
-      sent: Number(row['sent'] ?? 0),
-      delivered: Number(row['delivered'] ?? 0),
-      opened: Number(row['opened'] ?? 0),
-      replied: Number(row['replied'] ?? 0),
-      bounced: Number(row['bounced'] ?? 0),
+      sent: row ? Number(row['sent'] ?? 0) : 0,
+      delivered: row ? Number(row['delivered'] ?? 0) : 0,
+      opened: row ? Number(row['opened'] ?? 0) : 0,
+      replied: row ? Number(row['replied'] ?? 0) : 0,
+      bounced: row ? Number(row['bounced'] ?? 0) : 0,
     };
   }
 
@@ -271,19 +288,26 @@ export class AnalyticsService {
   ): Promise<{ totalCreators: number; activeCreators: number; newListCreators: number }> {
     const result = await this.db.execute(sql`
       SELECT
-        COUNT(*) AS total,
-        COUNT(CASE WHEN last_active_at > NOW() - INTERVAL '30 days' THEN 1 END) AS active
-      FROM wp.workspace_creator_link
-      WHERE workspace_id = ${workspaceId}
-        AND workspace_removed_at IS NULL
+        COUNT(DISTINCT wcl.creator_id) AS total,
+        COUNT(DISTINCT CASE WHEN wcl.last_active_at > NOW() - INTERVAL '30 days' THEN wcl.creator_id END) AS active,
+        (
+          SELECT COUNT(DISTINCT lm.creator_id)
+          FROM wp.list_member lm
+          JOIN wp.list l ON lm.list_id = l.list_id
+          WHERE l.workspace_id = ${workspaceId}
+            AND lm.created_at >= NOW() - INTERVAL '30 days'
+        ) AS new_list_creators
+      FROM wp.workspace_creator_link wcl
+      WHERE wcl.workspace_id = ${workspaceId}
+        AND wcl.workspace_removed_at IS NULL
     `);
 
-    const row = result[0]!;
+    const row = result[0];
 
     return {
-      totalCreators: Number(row['total'] ?? 0),
-      activeCreators: Number(row['active'] ?? 0),
-      newListCreators: 0, // Would need list membership data
+      totalCreators: row ? Number(row['total'] ?? 0) : 0,
+      activeCreators: row ? Number(row['active'] ?? 0) : 0,
+      newListCreators: row ? Number(row['new_list_creators'] ?? 0) : 0,
     };
   }
 

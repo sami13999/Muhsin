@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/lib/toast';
+import { api } from '@/lib/api';
 
 interface Member {
   name: string;
@@ -17,15 +18,16 @@ interface Invite {
   time: string;
 }
 
+const DEFAULT_MEMBERS: Member[] = [
+  { name: 'Ayesha Malik', email: 'ayesha@mushin.pk', role: 'Owner', time: 'Active', owner: true },
+  { name: 'Ahmed Raza Khan', email: 'ahmed@mushin.pk', role: 'Admin', time: '12m ago', owner: false },
+  { name: 'Bilal Hussain', email: 'bilal@mushin.pk', role: 'Analyst', time: '1h ago', owner: false },
+  { name: 'Sana Riaz', email: 'sana@mushin.pk', role: 'Analyst', time: '3d ago', owner: false }
+];
+
 export default function MembersSettings() {
   const toast = useToast();
-  const [members, setMembers] = useState<Member[]>([
-    { name: 'Ayesha Malik', email: 'ayesha@mushin.pk', role: 'Owner', time: 'just now', owner: true },
-    { name: 'Ahmed Raza Khan', email: 'ahmed@mushin.pk', role: 'Admin', time: '12m', owner: false },
-    { name: 'Bilal Hussain', email: 'bilal@mushin.pk', role: 'Analyst', time: '1h', owner: false },
-    { name: 'Sana Riaz', email: 'sana@mushin.pk', role: 'Analyst', time: '3d', owner: false }
-  ]);
-
+  const [members, setMembers] = useState<Member[]>(DEFAULT_MEMBERS);
   const [invites, setInvites] = useState<Invite[]>([
     { email: 'faisal@brandx.pk', role: 'Analyst', time: 'sent 2d ago' }
   ]);
@@ -35,18 +37,50 @@ export default function MembersSettings() {
   const [inviteRole, setInviteRole] = useState<'Admin' | 'Analyst' | 'Member'>('Analyst');
 
   useEffect(() => {
-    const savedMembers = localStorage.getItem('mushin_members');
-    if (savedMembers) {
+    let mounted = true;
+
+    async function loadWorkspaceMembers() {
       try {
-        setMembers(JSON.parse(savedMembers));
-      } catch (e) {}
+        const res = await api.listWorkspaces();
+        if (mounted && res?.data && res.data.length > 0) {
+          const mapped: Member[] = res.data.map((item, idx) => {
+            const isOwner = item.membership.role.toLowerCase() === 'owner';
+            const roleCap = isOwner ? 'Owner' : item.membership.role.toLowerCase() === 'admin' ? 'Admin' : 'Analyst';
+            return {
+              name: `Workspace User ${idx + 1}`,
+              email: `user${idx + 1}@${item.workspace.slug || 'workspace'}.app`,
+              role: roleCap as Member['role'],
+              time: 'Active now',
+              owner: isOwner
+            };
+          });
+          if (mapped.length > 0) setMembers(mapped);
+        }
+      } catch {
+        // Fallback
+      }
+
+      if (mounted) {
+        const savedMembers = localStorage.getItem('mushin_members');
+        if (savedMembers) {
+          try {
+            setMembers(JSON.parse(savedMembers));
+          } catch (e) {}
+        }
+        const savedInvites = localStorage.getItem('mushin_invites');
+        if (savedInvites) {
+          try {
+            setInvites(JSON.parse(savedInvites));
+          } catch (e) {}
+        }
+      }
     }
-    const savedInvites = localStorage.getItem('mushin_invites');
-    if (savedInvites) {
-      try {
-        setInvites(JSON.parse(savedInvites));
-      } catch (e) {}
-    }
+
+    loadWorkspaceMembers();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleSendInvite = (e: React.FormEvent) => {

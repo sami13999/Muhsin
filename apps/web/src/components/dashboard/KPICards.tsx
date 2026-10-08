@@ -2,22 +2,45 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { api } from '@/lib/api';
 
 export default function KPICards() {
   const router = useRouter();
 
-  const [credits, setCredits] = React.useState(84140);
+  const [credits, setCredits] = React.useState<number | null>(null);
 
   React.useEffect(() => {
-    const saved = localStorage.getItem('mushin_credits');
-    if (saved) setCredits(Number(saved));
+    let mounted = true;
+
+    async function loadWorkspaceCredits() {
+      try {
+        const res = await api.listWorkspaces();
+        if (mounted && res?.data?.[0]) {
+          // If workspace returned, update state
+          const saved = localStorage.getItem('mushin_credits');
+          setCredits(saved ? Number(saved) : 100000);
+          return;
+        }
+      } catch {
+        // Fallback to local storage state
+      }
+      if (mounted) {
+        const saved = localStorage.getItem('mushin_credits');
+        setCredits(saved ? Number(saved) : 100000);
+      }
+    }
+
+    loadWorkspaceCredits();
 
     const handleSync = () => {
       const cur = localStorage.getItem('mushin_credits');
-      if (cur) setCredits(Number(cur));
+      if (cur && mounted) setCredits(Number(cur));
     };
     window.addEventListener('mushin_credits_update', handleSync);
-    return () => window.removeEventListener('mushin_credits_update', handleSync);
+    return () => {
+      mounted = false;
+      window.removeEventListener('mushin_credits_update', handleSync);
+    };
   }, []);
 
   const actions = [
@@ -76,11 +99,11 @@ export default function KPICards() {
           </span>
         </div>
         <div style={{ margin: '16px 0 8px' }}>
-          <span style={{ fontSize: '36px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', display: 'block', lineHeight: 1.1 }}>{credits.toLocaleString()}</span>
+          <span style={{ fontSize: '36px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', display: 'block', lineHeight: 1.1 }}>{(credits ?? 100000).toLocaleString()}</span>
           <span style={{ fontSize: '13px', color: '#64748b', display: 'block', marginTop: '4px' }}>of 100,000 monthly credits</span>
         </div>
         <div style={{ background: '#f1f5f9', height: '8px', borderRadius: '9999px', overflow: 'hidden', margin: '12px 0 20px' }}>
-          <div style={{ width: `${(credits / 100000) * 100}%`, background: '#10b981', height: '100%', borderRadius: '9999px' }} />
+          <div style={{ width: `${Math.min(100, Math.max(0, ((credits ?? 100000) / 100000) * 100))}%`, background: '#10b981', height: '100%', borderRadius: '9999px' }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', marginTop: 'auto' }}>
           <span style={{ color: '#94a3b8' }}>Renews on Aug 3</span>

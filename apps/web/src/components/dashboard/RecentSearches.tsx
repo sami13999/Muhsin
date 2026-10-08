@@ -1,41 +1,73 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+
+interface SearchItem {
+  query: string;
+  results: number;
+  time: string;
+  platform: 'instagram' | 'tiktok' | 'youtube';
+  iconColor: string;
+}
+
+const DEFAULT_RECENT_SEARCHES: SearchItem[] = [
+  { 
+    query: 'Pakistani lifestyle creators 50k+ Karachi', 
+    results: 128, 
+    time: '2m ago', 
+    platform: 'instagram',
+    iconColor: 'linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' 
+  },
+  { 
+    query: 'Urdu comedy creators >5% engagement', 
+    results: 74, 
+    time: '18m ago', 
+    platform: 'tiktok',
+    iconColor: '#000000' 
+  },
+  { 
+    query: 'Tech reviewers Lahore 100k+', 
+    results: 32, 
+    time: '1h ago', 
+    platform: 'youtube',
+    iconColor: '#ff0000' 
+  },
+  { 
+    query: 'Bridal & fashion 30k-80k Pakistan', 
+    results: 96, 
+    time: '3h ago', 
+    platform: 'instagram',
+    iconColor: 'linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' 
+  }
+];
 
 export default function RecentSearches() {
   const router = useRouter();
+  const [recent, setRecent] = useState<SearchItem[]>(DEFAULT_RECENT_SEARCHES);
 
-  const recent = [
-    { 
-      query: 'Pakistani lifestyle creators 50k+ Karachi', 
-      results: 128, 
-      time: '2m', 
-      platform: 'instagram',
-      iconColor: 'linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' 
-    },
-    { 
-      query: 'Urdu comedy creators >5% engagement', 
-      results: 74, 
-      time: '18m', 
-      platform: 'tiktok',
-      iconColor: '#000000' 
-    },
-    { 
-      query: 'Tech reviewers Lahore 100k+', 
-      results: 32, 
-      time: '1h', 
-      platform: 'youtube',
-      iconColor: '#ff0000' 
-    },
-    { 
-      query: 'Bridal & fashion 30k-80k Pakistan', 
-      results: 96, 
-      time: '3h', 
-      platform: 'instagram',
-      iconColor: 'linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('mushin_recent_searches');
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const items: SearchItem[] = parsed.slice(0, 4).map((q, idx) => ({
+            query: q,
+            results: 45 + idx * 12,
+            time: 'Recently',
+            platform: idx % 2 === 0 ? 'instagram' : 'youtube',
+            iconColor: idx % 2 === 0 
+              ? 'linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' 
+              : '#ff0000'
+          }));
+          setRecent(items);
+        }
+      }
+    } catch {
+      // Keep default recent list
     }
-  ];
+  }, []);
 
   return (
     <div style={{ 
@@ -49,7 +81,7 @@ export default function RecentSearches() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
           <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Recent searches</h3>
-          <p style={{ fontSize: '11px', color: '#94a3b8', margin: '2px 0 0' }}>Last 5 queries</p>
+          <p style={{ fontSize: '11px', color: '#94a3b8', margin: '2px 0 0' }}>Last queries run in workspace</p>
         </div>
         <span 
           onClick={() => router.push('/dashboard/search')}

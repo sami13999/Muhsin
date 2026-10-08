@@ -27,13 +27,14 @@ import { rateLimitMiddleware } from './middleware/rate-limit.js';
 import { mfaEnforcement } from './middleware/mfa-enforcement.js';
 import { impersonationContext, enforceImpersonationMode } from './middleware/impersonation.js';
 import { createM1Routes } from './routes/m1-workspace/index.js';
-import { createM2Routes } from './routes/m2-creator/index.js';
+import { createM2Routes, createErasureRoutes } from './routes/m2-creator/index.js';
 import { createRevealRoutes } from './routes/m2-creator/reveal.routes.js';
 import { createHistoryRoutes } from './routes/m2-creator/history.routes.js';
 import { createRefreshRoutes } from './routes/m2-creator/refresh.routes.js';
 import { createM3Routes } from './routes/m3-search/index.js';
 import { createBillingWebhookRoutes } from './routes/m4-billing/index.js';
 import { createCRMListRoutes, createCRMCampaignRoutes } from './routes/m8-crm/index.js';
+import { createOutreachRoutes } from './routes/m9-outreach/index.js';
 import { createAnalyticsRoutes } from './routes/m12-analytics/analytics.routes.js';
 import { createHealthRoutes } from './routes/health/health.routes.js';
 import { createAuthRoutes } from './routes/auth/auth.routes.js';
@@ -41,6 +42,7 @@ import { createAdminRoutes } from './routes/admin/admin.routes.js';
 import { createStaffRoutes } from './routes/admin/staff.routes.js';
 import { createStaffPortalRoutes } from './routes/staff/staff-portal.routes.js';
 import { createCRMService } from './services/crm.service.js';
+import { createOutreachService } from './services/outreach.service.js';
 import { createAnalyticsService } from './services/analytics.service.js';
 import { createStaffService } from './services/staff.service.js';
 
@@ -128,7 +130,7 @@ export function createApp(config: AppConfig = {}): Hono {
   // ── 4. CORS (env-driven origins) ───────────────────────────
   const corsOrigins = config.corsOrigins
     ?? process.env['CORS_ORIGINS']?.split(',').map(s => s.trim())
-    ?? ['http://localhost:3001', 'http://localhost:3000'];
+    ?? ['http://localhost:3001', 'http://localhost:3000', 'http://127.0.0.1:3001', 'http://127.0.0.1:3000'];
 
   app.use('*', cors({
     origin: corsOrigins,
@@ -147,28 +149,158 @@ export function createApp(config: AppConfig = {}): Hono {
     registerHealthCheck('meilisearch', async () => ({ status: 'healthy', message: 'Mock Meilisearch Active' }));
     app.route('/health', createHealthRoutes(undefined as any));
 
-    // Mock Auth
+    // Mock Stateful Auth Store
+    const mockRegisteredUsers: Array<{ id: string; email: string; password: string; name?: string }> = [
+      { id: 'usr-001', email: 'admin@mushin.app', password: 'password123', name: 'Admin User' },
+      { id: 'usr-002', email: 'owner@acme.com', password: 'password123', name: 'Acme Owner' },
+    ];
+
     app.post('/auth/login', async (c) => {
-      let email = 'admin@mushin.app';
+      const requestId = c.get('requestId') || 'mock-request-id';
+      let body: any = {};
       try {
-        const body = await c.req.json();
-        if (body?.email) email = body.email;
+        body = await c.req.json();
       } catch {}
+
+      const { email, password } = body ?? {};
+      if (!email || !password) {
+        return c.json(
+          {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Email and password are required',
+              request_id: requestId,
+            },
+          },
+          400,
+        );
+      }
+
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const user = mockRegisteredUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+
+      if (!user) {
+        return c.json(
+          {
+            error: {
+              code: 'AUTH_ACCOUNT_NOT_FOUND',
+              message: `Account for "${email}" was not found. Please sign up first.`,
+              request_id: requestId,
+            },
+          },
+          401,
+        );
+      }
+
+      const reqPassword = String(password).trim().toLowerCase();
+      const storedPassword = user.password.toLowerCase();
+      const isDevPasswordMatch =
+        user.password === password ||
+        reqPassword === storedPassword ||
+        reqPassword === 'password123' ||
+        reqPassword === 'password123!';
+
+      if (!isDevPasswordMatch) {
+        return c.json(
+          {
+            error: {
+              code: 'AUTH_INVALID_PASSWORD',
+              message: 'Incorrect password. Please check your credentials and try again.',
+              request_id: requestId,
+            },
+          },
+          401,
+        );
+      }
+
       return c.json({
         data: {
-          user: { id: 'usr-001', email },
-          session: { access_token: 'mock-jwt-token-for-dev', refresh_token: 'mock-refresh-token-for-dev', expires_at: 9999999999 }
+          user: { id: user.id, email: user.email, name: user.name || user.email.split('@')[0] },
+          session: {
+            access_token: `token-${user.id}-${Date.now()}`,
+            refresh_token: `refresh-${user.id}-${Date.now()}`,
+            expires_at: Math.floor(Date.now() / 1000) + 86400 * 30,
+          },
         },
-        meta: { request_id: 'mock-request-id' }
+        meta: { request_id: requestId },
       });
     });
-    app.post('/auth/signup', (c) => c.json({
-      data: {
-        user: { id: 'usr-001', email: 'admin@mushin.app' },
-        session: { access_token: 'mock-jwt-token-for-dev', refresh_token: 'mock-refresh-token-for-dev', expires_at: 9999999999 }
-      },
-      meta: { request_id: 'mock-request-id' }
-    }));
+
+    app.post('/auth/signup', async (c) => {
+      const requestId = c.get('requestId') || 'mock-request-id';
+      let body: any = {};
+      try {
+        body = await c.req.json();
+      } catch {}
+
+      const { email, password, name } = body ?? {};
+      if (!email || !password) {
+        return c.json(
+          {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Email and password are required',
+              request_id: requestId,
+            },
+          },
+          400,
+        );
+      }
+
+      if (String(password).length < 6) {
+        return c.json(
+          {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Password must be at least 6 characters long',
+              request_id: requestId,
+            },
+          },
+          400,
+        );
+      }
+
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const existing = mockRegisteredUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+
+      if (existing) {
+        return c.json(
+          {
+            error: {
+              code: 'AUTH_EMAIL_EXISTS',
+              message: `An account with "${email}" already exists. Please log in instead.`,
+              request_id: requestId,
+            },
+          },
+          400,
+        );
+      }
+
+      const newUser = {
+        id: `usr-${Date.now()}`,
+        email: normalizedEmail,
+        password: String(password),
+        name: name || normalizedEmail.split('@')[0],
+      };
+
+      mockRegisteredUsers.push(newUser);
+
+      return c.json(
+        {
+          data: {
+            user: { id: newUser.id, email: newUser.email, name: newUser.name },
+            session: {
+              access_token: `token-${newUser.id}-${Date.now()}`,
+              refresh_token: `refresh-${newUser.id}-${Date.now()}`,
+              expires_at: Math.floor(Date.now() / 1000) + 86400 * 30,
+            },
+          },
+          meta: { request_id: requestId },
+        },
+        201,
+      );
+    });
+
     app.post('/auth/logout', (c) => c.json({ data: { success: true } }));
     app.get('/auth/session', (c) => c.json({
       data: { user: { id: 'usr-001', email: 'admin@mushin.app' } },
@@ -191,10 +323,25 @@ export function createApp(config: AppConfig = {}): Hono {
     }));
 
     // Mock API Lists, Campaigns & Creators
+    const mockListsStore: Array<{ listId: string; name: string; description: string | null; memberCount: number; createdAt: string }> = [
+      { listId: 'lst-001', name: 'Summer Niche List', description: 'Tech and Fashion influencers in Pakistan', memberCount: 24, createdAt: new Date().toISOString() },
+      { listId: 'lst-002', name: 'Ramadan Brand Ambassadors', description: 'Verified beauty and lifestyle creators', memberCount: 12, createdAt: new Date().toISOString() },
+    ];
+
     app.route('/api/v1', createCRMListRoutes({
-      listLists: async () => [{ listId: 'lst-001', name: 'Summer Niche List', description: 'Tech and Fashion influencers in Pakistan', memberCount: 24, createdAt: new Date().toISOString() }],
-      createList: async (p: { name: string; description?: string }) => ({ listId: `lst-${Date.now()}`, name: p.name, description: p.description || null }),
-      getList: async () => null,
+      listLists: async () => mockListsStore,
+      createList: async (p: { name: string; description?: string }) => {
+        const newList = {
+          listId: `lst-${Date.now()}`,
+          name: p.name,
+          description: p.description || null,
+          memberCount: 0,
+          createdAt: new Date().toISOString(),
+        };
+        mockListsStore.unshift(newList);
+        return newList;
+      },
+      getList: async (id: string) => mockListsStore.find((l) => l.listId === id) || null,
       addListMember: async () => {},
       removeListMember: async () => {},
     } as any));
@@ -202,10 +349,111 @@ export function createApp(config: AppConfig = {}): Hono {
     app.get('/api/v1/creators/search', (c) => c.json({
       data: [
         { creatorId: 'cr-001', displayName: 'Ayesha Khan', primaryHandle: '@ayeshakhan', platform: 'instagram', followerCount: 150000, engagementRate: 4.5, _rankingScore: 98 },
-        { creatorId: 'cr-002', displayName: 'Zain Ahmed', primaryHandle: '@zaintech', platform: 'youtube', followerCount: 320000, engagementRate: 6.2, _rankingScore: 92 }
+        { creatorId: 'cr-002', displayName: 'Zain Ahmed', primaryHandle: '@zaintech', platform: 'youtube', followerCount: 320000, engagementRate: 6.2, _rankingScore: 92 },
+        { creatorId: 'cr-003', displayName: 'Sana Riaz', primaryHandle: '@sanaa.k', platform: 'instagram', followerCount: 412000, engagementRate: 5.2, _rankingScore: 89 },
+        { creatorId: 'cr-004', displayName: 'Bilal Hussain', primaryHandle: '@bilalhussain', platform: 'tiktok', followerCount: 512000, engagementRate: 5.5, _rankingScore: 88 }
       ],
-      total: 2, page: 1, limit: 10, meta: { request_id: 'mock-request-id' }
+      total: 4, page: 1, limit: 10, meta: { request_id: 'mock-request-id' }
     }));
+
+    app.post('/api/v1/creators/search/nl', async (c) => {
+      let body: any = {};
+      try {
+        body = await c.req.json();
+      } catch {}
+      const query = String(body.query || 'Pakistani creators');
+      const queryLower = query.toLowerCase();
+      const chips: Array<{ label: string; value: string; field: string }> = [];
+
+      let platform = 'all';
+      if (queryLower.includes('instagram')) {
+        platform = 'instagram';
+        chips.push({ label: 'Platform', value: 'Instagram', field: 'platform' });
+      } else if (queryLower.includes('youtube')) {
+        platform = 'youtube';
+        chips.push({ label: 'Platform', value: 'YouTube', field: 'platform' });
+      } else if (queryLower.includes('tiktok')) {
+        platform = 'tiktok';
+        chips.push({ label: 'Platform', value: 'TikTok', field: 'platform' });
+      }
+
+      if (queryLower.includes('50k') || queryLower.includes('100k') || queryLower.includes('50k+')) {
+        chips.push({ label: 'Min Followers', value: '50,000+', field: 'follower_min' });
+      }
+      if (queryLower.includes('lifestyle') || queryLower.includes('fashion') || queryLower.includes('bridal') || queryLower.includes('tech') || queryLower.includes('food')) {
+        const nicheMatch = queryLower.includes('fashion') ? 'Fashion' : queryLower.includes('tech') ? 'Technology' : queryLower.includes('food') ? 'Food' : 'Lifestyle';
+        chips.push({ label: 'Niche', value: nicheMatch, field: 'niche' });
+      }
+      if (queryLower.includes('karachi') || queryLower.includes('lahore') || queryLower.includes('pakistani') || queryLower.includes('pk')) {
+        chips.push({ label: 'Geography', value: 'Pakistan (PK)', field: 'geo' });
+      }
+
+      const allCreators = [
+        { creatorId: 'cr-001', displayName: 'Ayesha Khan', primaryHandle: '@ayeshakhan', platform: 'instagram', followerCount: 150000, engagementRate: 4.5, _rankingScore: 98 },
+        { creatorId: 'cr-002', displayName: 'Zain Ahmed', primaryHandle: '@zaintech', platform: 'youtube', followerCount: 320000, engagementRate: 6.2, _rankingScore: 92 },
+        { creatorId: 'cr-003', displayName: 'Sana Riaz', primaryHandle: '@sanaa.k', platform: 'instagram', followerCount: 412000, engagementRate: 5.2, _rankingScore: 89 },
+        { creatorId: 'cr-004', displayName: 'Bilal Hussain', primaryHandle: '@bilalhussain', platform: 'tiktok', followerCount: 512000, engagementRate: 5.5, _rankingScore: 88 }
+      ];
+
+      const results = allCreators.filter((item) => platform === 'all' || item.platform === platform);
+
+      return c.json({
+        interpretation: {
+          chips: chips.length > 0 ? chips : [{ label: 'Smart Filter', value: 'Pakistani Creators', field: 'niche' }],
+          raw: query,
+          confidence: 0.96,
+          cached: false
+        },
+        results,
+        total: results.length,
+        meta: { request_id: 'mock-request-id' }
+      });
+    });
+
+    app.post('/api/v1/creators/search/live', async (c) => {
+      let body: any = {};
+      try {
+        body = await c.req.json();
+      } catch {}
+      const query = String(body.query || 'Pakistani creators');
+      const queryLower = query.toLowerCase();
+
+      const liveDiscoveredCreators = [
+        { creatorId: 'cr-live-001', displayName: 'Mehak Fatima', primaryHandle: '@mehak.vlogs', platform: 'instagram', followerCount: 240000, engagementRate: 7.8, _rankingScore: 99, city: 'Karachi', niche: 'Lifestyle & Fashion', iqScore: 95, verified: true, isLive: true },
+        { creatorId: 'cr-live-002', displayName: 'Hamza Sheikh', primaryHandle: '@hamzasheikh', platform: 'youtube', followerCount: 680000, engagementRate: 8.4, _rankingScore: 97, city: 'Lahore', niche: 'Tech & Reviews', iqScore: 94, verified: true, isLive: true },
+        { creatorId: 'cr-live-003', displayName: 'Maria Soomro', primaryHandle: '@mariasoomro', platform: 'instagram', followerCount: 185000, engagementRate: 5.9, _rankingScore: 94, city: 'Islamabad', niche: 'Beauty & Lifestyle', iqScore: 91, verified: true, isLive: true },
+        { creatorId: 'cr-live-004', displayName: 'Usman Ali', primaryHandle: '@usman.tech', platform: 'tiktok', followerCount: 430000, engagementRate: 9.1, _rankingScore: 93, city: 'Karachi', niche: 'Tech & Gaming', iqScore: 90, verified: true, isLive: true },
+        { creatorId: 'cr-001', displayName: 'Ayesha Khan', primaryHandle: '@ayeshakhan', platform: 'instagram', followerCount: 150000, engagementRate: 4.5, _rankingScore: 98, city: 'Lahore', niche: 'Fashion', iqScore: 89, verified: true },
+        { creatorId: 'cr-002', displayName: 'Zain Ahmed', primaryHandle: '@zaintech', platform: 'youtube', followerCount: 320000, engagementRate: 6.2, _rankingScore: 92, city: 'Karachi', niche: 'Lifestyle', iqScore: 85, verified: true }
+      ];
+
+      // Filter by query if present
+      let filtered = liveDiscoveredCreators;
+      if (queryLower && queryLower !== 'pakistani creators') {
+        filtered = liveDiscoveredCreators.filter((item) => 
+          item.displayName.toLowerCase().includes(queryLower) ||
+          item.primaryHandle.toLowerCase().includes(queryLower) ||
+          item.platform.toLowerCase().includes(queryLower) ||
+          item.city.toLowerCase().includes(queryLower) ||
+          item.niche.toLowerCase().includes(queryLower)
+        );
+        if (filtered.length === 0) {
+          filtered = liveDiscoveredCreators; // Fallback to live discovered list if strict query matches none
+        }
+      }
+
+      return c.json({
+        data: filtered,
+        total: filtered.length,
+        executionStats: {
+          scrapedEndpoints: ['instagram.com', 'tiktok.com', 'youtube.com'],
+          latencyMs: 1420,
+          creditsDeducted: 12,
+          freshness: 'realtime_1s'
+        },
+        meta: { request_id: 'mock-request-id', timestamp: new Date().toISOString() }
+      });
+    });
     app.get('/api/v1/creators/trending', (c) => c.json({
       data: [
         { creatorId: 'cr-001', displayName: 'Ayesha Khan', primaryHandle: '@ayeshakhan', platform: 'instagram', followerCount: 150000, engagementRate: 4.5, primaryNiche: 'fashion', trendingScore: 95, trendingExplanation: { growth: 50, engagement: 45 }, trendDirection: 'accelerating' },
@@ -219,6 +467,21 @@ export function createApp(config: AppConfig = {}): Hono {
         profiles: [], enrichment: [], niches: []
       }
     }));
+    const mockRevealHandler = (c: any) => c.json({
+      data: {
+        revealed: true,
+        freeReveal: false,
+        creditsUsed: 5,
+        contact: {
+          email: 'ayesha.khan@creator-agency.pk',
+          phone: '+92 300 5550192',
+          whatsapp: '+92 300 5550192',
+        },
+      },
+      meta: { request_id: 'mock-request-id' }
+    });
+    app.post('/api/v1/creators/:id/reveal', mockRevealHandler);
+    app.post('/api/v1/creators/:id/reveal-contact', mockRevealHandler);
 
     // Mock Admin stats & staff
     app.get('/api/v1/admin/stats', (c) => c.json({
@@ -329,11 +592,12 @@ export function createApp(config: AppConfig = {}): Hono {
   // M1 — Workspace CRUD
   app.route('/api/v1', createM1Routes(db));
 
-  // M2 — Creator CRUD + Detail
+  // M2 — Creator CRUD + Detail + GDPR Erasure
   app.route('/api/v1', createM2Routes(db, meilisearch));
   app.route('/api/v1', createRevealRoutes(db));
   app.route('/api/v1', createHistoryRoutes(db));
   app.route('/api/v1', createRefreshRoutes(db));
+  app.route('/api/v1/creators', createErasureRoutes);
 
   // M3 — Search (filtered + NL + quote + trending)
   app.route('/api/v1', createM3Routes(meilisearch, llm, db));
@@ -342,6 +606,10 @@ export function createApp(config: AppConfig = {}): Hono {
   const crmService = createCRMService(db);
   app.route('/api/v1', createCRMListRoutes(crmService));
   app.route('/api/v1', createCRMCampaignRoutes());
+
+  // M9 — Outreach
+  const outreachService = createOutreachService(db);
+  app.route('/api/v1', createOutreachRoutes(outreachService));
 
   // M12 — Analytics
   const analyticsService = createAnalyticsService(db);

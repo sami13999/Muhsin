@@ -42,7 +42,7 @@ export default function CampaignCard({ campaign, onClick }: CampaignCardProps) {
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px', fontFamily: "'Inter', sans-serif" }}>{platformLabel} . {campaign.dates || '— — —'}</div>
         </div>
-        <img src={getAvatar(campaign.name)} alt="creator" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+        <img src={campaign.coverUrl || getAvatar(campaign.name)} alt={campaign.name} style={{ width: '36px', height: '36px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #cbd5e1' }} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '16px', fontFamily: "'Inter', sans-serif" }}>

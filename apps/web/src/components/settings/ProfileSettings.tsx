@@ -63,6 +63,27 @@ export default function ProfileSettings() {
     toast.info('Changes Discarded', 'Reverted profile settings to last saved version.');
   };
 
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('File too large', 'Please select an image under 10MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          const dataUrl = event.target.result as string;
+          setAvatarUrl(dataUrl);
+          toast.success('Avatar Uploaded', `Selected image from ${file.name}`);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '20px', fontFamily: "'Inter', sans-serif" }}>
       <div>
@@ -70,36 +91,40 @@ export default function ProfileSettings() {
         <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0' }}>How you appear across your workspace.</p>
       </div>
 
+      {/* Hidden File Input for Gallery / Camera Upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        capture="user"
+        onChange={handleFileUpload}
+        style={{ display: 'none' }}
+      />
+
       {/* Avatar Row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '20px', position: 'relative' }}>
-        <img src={avatarUrl} alt="avatar" style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #e2e8f0' }} />
-        <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '20px' }}>
+        <img src={avatarUrl} alt="avatar" style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #0f172a' }} />
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
             type="button"
-            onClick={() => setShowAvatarPicker(!showAvatarPicker)}
-            style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+            onClick={() => fileInputRef.current?.click()}
+            style={{ background: '#0f172a', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            Change avatar
+            📷 Camera / Gallery
           </button>
-          <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>PNG or JPG . 512×512 min.</div>
+          <button
+            type="button"
+            onClick={() => {
+              if (fileInputRef.current) {
+                fileInputRef.current.removeAttribute('capture');
+                fileInputRef.current.click();
+              }
+            }}
+            style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            📁 Choose File
+          </button>
         </div>
-
-        {showAvatarPicker && (
-          <div style={{ position: 'absolute', top: '70px', left: 0, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 50, display: 'flex', gap: '8px' }}>
-            {MOCK_AVATARS.map((url, idx) => (
-              <img
-                key={idx}
-                src={url}
-                alt="avatar preset"
-                onClick={() => {
-                  setAvatarUrl(url);
-                  setShowAvatarPicker(false);
-                }}
-                style={{ width: '38px', height: '38px', borderRadius: '50%', cursor: 'pointer', border: avatarUrl === url ? '2px solid #0f172a' : '2px solid transparent', objectFit: 'cover' }}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Fields */}

@@ -43,45 +43,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('mushin_token', token);
       localStorage.setItem('mushin_user', JSON.stringify(userData));
       setUser(userData);
-    } catch {
-      // Fallback for static Netlify deployment without live backend API server
-      const mockToken = `mock-token-${Date.now()}`;
-      const mockUser = {
-        id: `user-${Date.now()}`,
-        email: email || 'demo@mushin.ai',
-        name: email ? email.split('@')[0] : 'Demo User'
-      };
-      api.setToken(mockToken);
-      localStorage.setItem('mushin_token', mockToken);
-      localStorage.setItem('mushin_user', JSON.stringify(mockUser));
-      setUser(mockUser);
+    } catch (err: any) {
+      throw new Error(err.message || 'Check your credentials.');
     }
   };
 
   const signup = async (email: string, password: string, name: string) => {
     try {
       const result = await api.signup(email, password, name);
-      if (result.data.session) {
+      if (result.data?.session?.access_token) {
         const token = result.data.session.access_token;
         api.setToken(token);
         localStorage.setItem('mushin_token', token);
       }
-      if (result.data.user) {
+      if (result.data?.user) {
         localStorage.setItem('mushin_user', JSON.stringify(result.data.user));
         setUser(result.data.user);
       }
-    } catch {
-      // Fallback for static Netlify deployment without live backend API server
-      const mockToken = `mock-token-${Date.now()}`;
-      const mockUser = {
-        id: `user-${Date.now()}`,
-        email: email || 'demo@mushin.ai',
-        name: name || 'Demo User'
-      };
-      api.setToken(mockToken);
-      localStorage.setItem('mushin_token', mockToken);
-      localStorage.setItem('mushin_user', JSON.stringify(mockUser));
-      setUser(mockUser);
+    } catch (err: any) {
+      throw new Error(err.message || 'Unable to create account.');
     }
   };
 

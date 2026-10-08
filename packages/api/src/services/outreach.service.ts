@@ -15,7 +15,8 @@
 import type { Database } from '@mushin/database';
 import { sql } from 'drizzle-orm';
 import { emitEvent, EVENT_TYPES } from '@mushin/events';
-import type { ResendAdapter } from '@mushin/adapters';
+import type { ResendAdapter, WhatsAppAdapter } from '@mushin/adapters';
+import { createWhatsAppAdapter } from '@mushin/adapters';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -70,10 +71,12 @@ export interface SequenceEnrollment {
 export class OutreachService {
   private db: Database;
   private emailAdapter: ResendAdapter | null;
+  private whatsAppAdapter: WhatsAppAdapter;
 
-  constructor(db: Database, emailAdapter?: ResendAdapter) {
+  constructor(db: Database, emailAdapter?: ResendAdapter, whatsAppAdapter?: WhatsAppAdapter) {
     this.db = db;
     this.emailAdapter = emailAdapter ?? null;
+    this.whatsAppAdapter = whatsAppAdapter ?? (typeof createWhatsAppAdapter === 'function' ? createWhatsAppAdapter() : ({} as any));
   }
 
   /**
@@ -270,9 +273,30 @@ export class OutreachService {
       return result.messageId ?? crypto.randomUUID();
     }
 
-    // WhatsApp: not yet implemented
     if (input.channel === 'whatsapp') {
-      throw new Error('WhatsApp dispatch not yet implemented');
+      const contactResult = await this.db.execute(sql`
+        SELECT value FROM gcp.contact_record
+        WHERE creator_id = ${input.creatorId}
+          AND contact_type IN ('whatsapp', 'phone')
+          AND pii_erased_at IS NULL
+        LIMIT 1
+      `);
+
+      if (contactResult.length === 0) {
+        throw new Error('No phone/WhatsApp contact record found for creator');
+      }
+
+      const phone = contactResult[0]!['value'] as string;
+      const result = await this.whatsAppAdapter.sendMessage({
+        to: phone,
+        body: input.body,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error ?? 'Failed to dispatch WhatsApp message');
+      }
+
+      return result.messageId ?? `waba-${crypto.randomUUID()}`;
     }
 
     return crypto.randomUUID();
@@ -319,6 +343,10 @@ export class OutreachService {
 
 // ── Factory ──────────────────────────────────────────────────
 
-export function createOutreachService(db: Database, emailAdapter?: ResendAdapter): OutreachService {
-  return new OutreachService(db, emailAdapter);
+export function createOutreachService(
+  db: Database,
+  emailAdapter?: ResendAdapter,
+  whatsAppAdapter?: WhatsAppAdapter,
+): OutreachService {
+  return new OutreachService(db, emailAdapter, whatsAppAdapter);
 }

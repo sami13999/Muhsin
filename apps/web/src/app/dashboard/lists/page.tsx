@@ -5,6 +5,7 @@ import { useToast } from '@/lib/toast';
 import { api } from '@/lib/api';
 import ListsGridView from '@/components/lists/ListsGridView';
 import ListDetailsView from '@/components/lists/ListDetailsView';
+import ExportModal from '@/components/common/ExportModal';
 
 interface CreatorItem {
   id: string;
@@ -51,9 +52,50 @@ export default function ListsPage() {
   const [loading, setLoading] = useState(true);
   const [lists, setLists] = useState<List[]>([]);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  const [exportModalList, setExportModalList] = useState<List | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     const saved = localStorage.getItem('mushin_crm_lists');
+
+    async function loadBackendLists() {
+      try {
+        const res = await api.listLists();
+        if (mounted && res?.data && res.data.length > 0) {
+          const apiMapped: List[] = res.data.map((l) => ({
+            id: l.listId,
+            name: l.name,
+            desc: l.description || 'No description provided.',
+            count: l.memberCount ?? 0,
+            reach: `${(l.memberCount ?? 0) * 80}K`,
+            avgAuth: 90,
+            updated: `Updated ${new Date(l.createdAt).toLocaleDateString()}`,
+            favorite: false,
+            shared: true,
+            creators: [],
+            avatars: [
+              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+              'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=100&auto=format&fit=crop&q=80'
+            ]
+          }));
+          setLists(apiMapped);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Fallback
+      }
+
+      if (mounted) {
+        if (saved) {
+          setLists(JSON.parse(saved));
+          setLoading(false);
+          return;
+        }
+      }
+    }
+
+    loadBackendLists();
     const seededMarker = localStorage.getItem('mushin_crm_lists_seeded_v1');
     // Force seeding if no creators are present in list-1 or if seeded marker is absent
     const needsSeed = !saved || !seededMarker || (() => {
@@ -263,28 +305,9 @@ export default function ListsPage() {
 
   const handleExportList = (id: string) => {
     const list = lists.find(l => l.id === id);
-    if (!list) return;
-    const headers = ['Name', 'Handle', 'Platform', 'Followers', 'Auth Score', 'ER', 'Campaign', 'Added'];
-    const rows = list.creators.map(c => [
-      c.name,
-      c.handle,
-      c.platform,
-      c.followers,
-      c.authScore,
-      c.er,
-      c.campaign,
-      c.added
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${list.name.toLowerCase().replace(/\s+/g, '_')}_creators.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Export Complete', `CSV for "${list.name}" has been downloaded.`);
+    if (list) {
+      setExportModalList(list);
+    }
   };
 
   const handleShareList = (id: string) => {
@@ -336,6 +359,31 @@ export default function ListsPage() {
           onDuplicateList={handleDuplicateList}
           onExportList={handleExportList}
           onShareList={handleShareList}
+        />
+      )}
+
+      {/* Multi-Format Export Modal for Shortlists */}
+      {exportModalList && (
+        <ExportModal
+          isOpen={!!exportModalList}
+          onClose={() => setExportModalList(null)}
+          title={`Export "${exportModalList.name}"`}
+          entityName={exportModalList.name.toLowerCase().replace(/\s+/g, '_')}
+          defaultData={
+            exportModalList.creators.length > 0
+              ? exportModalList.creators.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  handle: c.handle,
+                  platform: c.platform.toUpperCase(),
+                  followers: c.followers,
+                  engagementRate: c.er,
+                  authScore: c.authScore,
+                  campaign: c.campaign,
+                  dateAdded: c.added,
+                }))
+              : undefined
+          }
         />
       )}
     </div>

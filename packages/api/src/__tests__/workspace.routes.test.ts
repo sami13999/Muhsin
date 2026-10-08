@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createMockDatabase } from '@mushin/testing';
+import type { TenancyContext } from '@mushin/shared';
 
 vi.mock('@mushin/database', () => ({
   workspaceRepository: {
@@ -25,7 +26,7 @@ import { createM1Routes } from '../routes/m1-workspace/workspace.routes.js';
 
 describe('Workspace Routes (M1)', () => {
   let app: Hono;
-  let mockDb: any;
+  let mockDb: ReturnType<typeof createMockDatabase>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,16 +36,25 @@ describe('Workspace Routes (M1)', () => {
     // Context middleware to simulate tenancy & request ID
     app.use('*', async (c, next) => {
       c.set('requestId', 'req-test-123');
-      c.set('tenancy', {
+      const tenancy: TenancyContext = {
         userId: 'usr-owner-001',
         workspaceId: 'ws-123',
+        creatorId: 'cr-001',
+        isStaff: false,
         roles: ['owner'],
-        tier: 'scale',
-      });
+        claims: {
+          iss: 'https://auth.mushin.app/',
+          sub: 'usr-owner-001',
+          aud: 'mushin-api',
+          exp: 9999999999,
+          iat: 1000000000,
+        },
+      };
+      c.set('tenancy', tenancy);
       await next();
     });
 
-    app.route('/api/v1', createM1Routes(mockDb));
+    app.route('/api/v1', createM1Routes(mockDb as any));
   });
 
   describe('POST /api/v1/workspaces', () => {
@@ -76,7 +86,7 @@ describe('Workspace Routes (M1)', () => {
       });
 
       expect(res.status).toBe(201);
-      const json = await res.json();
+      const json = (await res.json()) as any;
       expect(json.data.workspace.name).toBe('Acme Growth');
       expect(json.data.creditBalance).toBe('0');
       expect(json.meta.request_id).toBe('req-test-123');
@@ -99,7 +109,7 @@ describe('Workspace Routes (M1)', () => {
       });
 
       expect(res.status).toBe(409);
-      const json = await res.json();
+      const json = (await res.json()) as any;
       expect(json.error.code).toBe('CONFLICT');
     });
 
@@ -114,7 +124,7 @@ describe('Workspace Routes (M1)', () => {
       });
 
       expect(res.status).toBe(400);
-      const json = await res.json();
+      const json = (await res.json()) as any;
       expect(json.error.code).toBe('VALIDATION_ERROR');
     });
   });
@@ -130,7 +140,7 @@ describe('Workspace Routes (M1)', () => {
 
       const res = await app.request('/api/v1/workspaces', { method: 'GET' });
       expect(res.status).toBe(200);
-      const json = await res.json();
+      const json = (await res.json()) as any;
       expect(json.data.length).toBe(1);
       expect(json.data[0].workspace.slug).toBe('alpha');
     });
@@ -146,7 +156,7 @@ describe('Workspace Routes (M1)', () => {
 
       const res = await app.request('/api/v1/workspaces/ws-123', { method: 'GET' });
       expect(res.status).toBe(200);
-      const json = await res.json();
+      const json = (await res.json()) as any;
       expect(json.data.memberCount).toBe(5);
       expect(json.data.creditBalance).toBe('500');
     });
@@ -173,7 +183,7 @@ describe('Workspace Routes (M1)', () => {
       });
 
       expect(res.status).toBe(200);
-      const json = await res.json();
+      const json = (await res.json()) as any;
       expect(json.data.workspace.name).toBe('Updated HQ');
     });
   });
@@ -195,7 +205,7 @@ describe('Workspace Routes (M1)', () => {
       });
 
       expect(res.status).toBe(201);
-      const json = await res.json();
+      const json = (await res.json()) as any;
       expect(json.data.membership.invitedEmail).toBe('colleague@mushin.app');
     });
   });
