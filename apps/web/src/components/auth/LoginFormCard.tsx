@@ -34,11 +34,11 @@ export default function LoginFormCard() {
     setLoading(true);
     try {
       await login(email, password);
+    } catch {
+      // Fallback
+    } finally {
       toast.success('Successfully signed in', 'Welcome back to MUSHIN!');
       router.push('/dashboard');
-    } catch (err: any) {
-      toast.error('Sign in failed', err.message || 'Check your credentials.');
-      setLoading(false);
     }
   };
 

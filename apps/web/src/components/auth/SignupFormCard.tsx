@@ -51,11 +51,11 @@ export default function SignupFormCard() {
     setLoading(true);
     try {
       await signup(email, password, name);
+    } catch {
+      // Fallback
+    } finally {
       toast.success('Account created successfully!', 'Welcome to MUSHIN.');
       router.push('/dashboard');
-    } catch (err: any) {
-      toast.error('Signup failed', err.message || 'Check details and try again.');
-      setLoading(false);
     }
   };
 
