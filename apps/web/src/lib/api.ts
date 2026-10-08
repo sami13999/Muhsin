@@ -223,6 +223,14 @@ class APIClient {
         isLive?: boolean;
       }>;
       total: number;
+      pipelineStages?: {
+        aiQueryExpansion: string[];
+        serperQueriesExecuted: number;
+        duplicatesFiltered: number;
+        apifyUrlsScraped: number;
+        creatorsPersistedDb: number;
+        mushinRankingApplied: boolean;
+      };
       executionStats?: {
         scrapedEndpoints: string[];
         latencyMs: number;

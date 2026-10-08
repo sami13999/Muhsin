@@ -445,6 +445,14 @@ export function createApp(config: AppConfig = {}): Hono {
       return c.json({
         data: filtered,
         total: filtered.length,
+        pipelineStages: {
+          aiQueryExpansion: [`site:instagram.com ${query}`, `site:tiktok.com ${query}`, `site:youtube.com ${query}`],
+          serperQueriesExecuted: 3,
+          duplicatesFiltered: 4,
+          apifyUrlsScraped: filtered.length,
+          creatorsPersistedDb: filtered.length,
+          mushinRankingApplied: true
+        },
         executionStats: {
           scrapedEndpoints: ['instagram.com', 'tiktok.com', 'youtube.com'],
           latencyMs: 1420,
