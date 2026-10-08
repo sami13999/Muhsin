@@ -1,0 +1,5 @@
+{
+  "framework": null,
+  "buildCommand": "pnpm --filter @mushin/api build",
+  "outputDirectory": "dist"
+}
