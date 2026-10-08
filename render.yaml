@@ -1,0 +1,31 @@
+services:
+  # 1. API Backend Web Service (Hono Node.js Server)
+  - type: web
+    name: mushin-api
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @mushin/api build
+    startCommand: pnpm --filter @mushin/api start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+
+  # 2. Frontend Web Service (Next.js App)
+  - type: web
+    name: mushin-web
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @mushin/web build
+    startCommand: pnpm --filter @mushin/web start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: mushin-api
+          property: url
