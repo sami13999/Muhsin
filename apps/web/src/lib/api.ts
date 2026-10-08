@@ -10,7 +10,10 @@ function getApiBase(): string {
   if (typeof window !== 'undefined' && window.location?.hostname) {
     const protocol = window.location.protocol;
     const hostname = window.location.hostname;
-    return `${protocol}//${hostname}:3000`;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `${protocol}//${hostname}:3000`;
+    }
+    return `${protocol}//${hostname}`;
   }
   return 'http://localhost:3000';
 }
