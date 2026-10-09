@@ -406,7 +406,14 @@ export default function SearchPage() {
       )}
 
       <SearchFilters isFilterOpen={isFilterOpen} setIsFilterOpen={setIsFilterOpen} onApplyFilters={handleApplyFilters} />
-      {selectedCreatorId && <CreatorProfilePanel creatorId={selectedCreatorId} onClose={() => setSelectedCreatorId(null)} onDeductCredits={deductCredits} />}
+      {selectedCreatorId && (
+        <CreatorProfilePanel
+          creatorId={selectedCreatorId}
+          creator={creators.find(c => c.creatorId === selectedCreatorId) || null}
+          onClose={() => setSelectedCreatorId(null)}
+          onDeductCredits={deductCredits}
+        />
+      )}
     </div>
   );
 }
