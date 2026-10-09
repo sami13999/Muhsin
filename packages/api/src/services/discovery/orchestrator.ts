@@ -559,7 +559,7 @@ Return JSON with format: { "searchQueries": ["site:...", "site:..."] }`;
       const path = parsed.pathname;
       const parts = path.split('/').filter(Boolean);
       if (!parts[0]) return undefined;
-      const cleanPart = parts[0].replace(/^@/, '');
+      const cleanPart = parts[0].replace(/^@+/, '');
       return `@${cleanPart}`;
     } catch {
       return undefined;
