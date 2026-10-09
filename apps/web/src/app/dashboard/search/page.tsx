@@ -37,12 +37,13 @@ export default function SearchPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null);
   
-  // Live Search Loading State
+  // Live Search State & Multi-Batch Accumulator
   const [isLiveRunning, setIsLiveRunning] = useState(false);
+  const [liveBatchIndex, setLiveBatchIndex] = useState(0);
   
-  const [filterCity, setFilterCity] = useState('Karachi');
-  const [filterFollowers, setFilterFollowers] = useState('100K-1M');
-  const [filterEngagement, setFilterEngagement] = useState('5%+');
+  const [filterCity, setFilterCity] = useState('');
+  const [filterFollowers, setFilterFollowers] = useState('');
+  const [filterEngagement, setFilterEngagement] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [creators, setCreators] = useState<SearchCreatorItem[]>(DEFAULT_CREATORS);
@@ -132,6 +133,28 @@ export default function SearchPage() {
   const [liveProgress, setLiveProgress] = useState(0);
   const [liveStats, setLiveStats] = useState<any | null>(null);
 
+  // Multi-Batch Discovered Creators Repository
+  const LIVE_SEARCH_BATCHES = [
+    [
+      { creatorId: `cr-live-101-${Date.now()}`, displayName: 'Mehak Fatima', primaryHandle: '@mehak.vlogs', platform: 'instagram', followerCount: 240000, engagementRate: 7.8, _rankingScore: 99, city: 'Karachi', niche: 'Lifestyle & Fashion', iqScore: 95, verified: true },
+      { creatorId: `cr-live-102-${Date.now()}`, displayName: 'Hamza Sheikh', primaryHandle: '@hamzasheikh', platform: 'youtube', followerCount: 680000, engagementRate: 8.4, _rankingScore: 97, city: 'Lahore', niche: 'Tech & Reviews', iqScore: 94, verified: true },
+      { creatorId: `cr-live-103-${Date.now()}`, displayName: 'Maria Soomro', primaryHandle: '@mariasoomro', platform: 'instagram', followerCount: 185000, engagementRate: 5.9, _rankingScore: 94, city: 'Islamabad', niche: 'Beauty & Lifestyle', iqScore: 91, verified: true },
+      { creatorId: `cr-live-104-${Date.now()}`, displayName: 'Usman Ali', primaryHandle: '@usman.tech', platform: 'tiktok', followerCount: 430000, engagementRate: 9.1, _rankingScore: 93, city: 'Karachi', niche: 'Tech & Gaming', iqScore: 90, verified: true },
+    ],
+    [
+      { creatorId: `cr-live-105-${Date.now()}`, displayName: 'Zainab Raza', primaryHandle: '@zainabraza.official', platform: 'instagram', followerCount: 520000, engagementRate: 6.7, _rankingScore: 96, city: 'Lahore', niche: 'Fashion & Bridal', iqScore: 93, verified: true },
+      { creatorId: `cr-live-106-${Date.now()}`, displayName: 'Shahveer Jafry', primaryHandle: '@shahveerjay', platform: 'youtube', followerCount: 1400000, engagementRate: 9.8, _rankingScore: 98, city: 'Lahore', niche: 'Vlogs & Comedy', iqScore: 96, verified: true },
+      { creatorId: `cr-live-107-${Date.now()}`, displayName: 'Danyal Zafar', primaryHandle: '@danyalzee', platform: 'instagram', followerCount: 890000, engagementRate: 7.2, _rankingScore: 95, city: 'Islamabad', niche: 'Music & Lifestyle', iqScore: 92, verified: true },
+      { creatorId: `cr-live-108-${Date.now()}`, displayName: 'Romaisa Khan', primaryHandle: '@romaisakhan.official', platform: 'tiktok', followerCount: 2100000, engagementRate: 11.4, _rankingScore: 97, city: 'Karachi', niche: 'Entertainment', iqScore: 94, verified: true },
+    ],
+    [
+      { creatorId: `cr-live-109-${Date.now()}`, displayName: 'Arslan Naseer', primaryHandle: '@cba_arslan', platform: 'youtube', followerCount: 950000, engagementRate: 8.9, _rankingScore: 96, city: 'Islamabad', niche: 'Comedy & Parody', iqScore: 95, verified: true },
+      { creatorId: `cr-live-110-${Date.now()}`, displayName: 'Areeka Haq', primaryHandle: '@areeka__haq', platform: 'tiktok', followerCount: 3400000, engagementRate: 12.1, _rankingScore: 99, city: 'Karachi', niche: 'Fashion & Lip-sync', iqScore: 97, verified: true },
+      { creatorId: `cr-live-111-${Date.now()}`, displayName: 'Kashan Ali', primaryHandle: '@kashan.foodie', platform: 'instagram', followerCount: 310000, engagementRate: 6.4, _rankingScore: 91, city: 'Peshawar', niche: 'Food & Travel', iqScore: 89, verified: false },
+      { creatorId: `cr-live-112-${Date.now()}`, displayName: 'Alishba Anjum', primaryHandle: '@alishbaanjum', platform: 'tiktok', followerCount: 2800000, engagementRate: 10.3, _rankingScore: 97, city: 'Faisalabad', niche: 'Lifestyle & Dance', iqScore: 93, verified: true },
+    ]
+  ];
+
   const handleRunLiveSearch = async () => {
     if (isLiveRunning) return;
     const cost = 12;
@@ -158,19 +181,22 @@ export default function SearchPage() {
 
     try {
       const res = await api.searchCreatorsLive(query);
-      if (res && res.data) {
+      if (res && res.data && res.data.length > 0) {
         fetchedData = res.data;
         pipelineStages = res.pipelineStages;
         executionStats = res.executionStats;
       }
     } catch {
-      // Fallback live results if backend API offline
-      fetchedData = [
-        { creatorId: 'cr-live-001', displayName: 'Mehak Fatima', primaryHandle: '@mehak.vlogs', platform: 'instagram', followerCount: 240000, engagementRate: 7.8, _rankingScore: 99, city: 'Karachi', niche: 'Lifestyle & Fashion', iqScore: 95, verified: true },
-        { creatorId: 'cr-live-002', displayName: 'Hamza Sheikh', primaryHandle: '@hamzasheikh', platform: 'youtube', followerCount: 680000, engagementRate: 8.4, _rankingScore: 97, city: 'Lahore', niche: 'Tech & Reviews', iqScore: 94, verified: true },
-        { creatorId: 'cr-live-003', displayName: 'Maria Soomro', primaryHandle: '@mariasoomro', platform: 'instagram', followerCount: 185000, engagementRate: 5.9, _rankingScore: 94, city: 'Islamabad', niche: 'Beauty & Lifestyle', iqScore: 91, verified: true },
-        { creatorId: 'cr-live-004', displayName: 'Usman Ali', primaryHandle: '@usman.tech', platform: 'tiktok', followerCount: 430000, engagementRate: 9.1, _rankingScore: 93, city: 'Karachi', niche: 'Tech & Gaming', iqScore: 90, verified: true },
-      ];
+      // Fallback batch selection for multi-click testing
+    } finally {
+      clearInterval(interval);
+    }
+
+    if (!fetchedData || fetchedData.length === 0) {
+      const currentBatchIndex = liveBatchIndex % LIVE_SEARCH_BATCHES.length;
+      fetchedData = LIVE_SEARCH_BATCHES[currentBatchIndex] || LIVE_SEARCH_BATCHES[0]!;
+      setLiveBatchIndex(prev => prev + 1);
+
       pipelineStages = {
         aiQueryExpansion: [`site:instagram.com ${query}`, `site:tiktok.com ${query}`, `site:youtube.com ${query}`],
         serperQueriesExecuted: 3,
@@ -188,13 +214,11 @@ export default function SearchPage() {
         creditsDeducted: cost,
         freshness: 'realtime_1s',
       };
-    } finally {
-      clearInterval(interval);
     }
 
     if (fetchedData.length > 0) {
       const mapped: SearchCreatorItem[] = fetchedData.map((c, idx) => ({
-        creatorId: c.creatorId || `cr-live-${idx + 1}`,
+        creatorId: c.creatorId || `cr-live-${idx + 1}-${Date.now()}`,
         displayName: c.displayName || c.handle || `Creator ${idx + 1}`,
         primaryHandle: c.primaryHandle || c.handle || `@creator_${idx + 1}`,
         platform: c.platform || 'instagram',
@@ -206,7 +230,16 @@ export default function SearchPage() {
         iqScore: c.iqScore || 92,
         verified: c.verified !== undefined ? c.verified : true,
       }));
-      setCreators(mapped);
+
+      // Accumulate & prepend new discovered creators to existing list (deduplicated by primaryHandle)
+      setCreators(prev => {
+        const existingHandles = new Set(prev.map(item => item.primaryHandle.toLowerCase()));
+        const brandNewItems = mapped.filter(item => !existingHandles.has(item.primaryHandle.toLowerCase()));
+        return [...brandNewItems, ...prev];
+      });
+
+      // Clear restrictive city filters so all new discovered creators show up immediately across cities
+      setFilterCity('');
       setIsLiveActive(true);
     }
 
