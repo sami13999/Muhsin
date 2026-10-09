@@ -568,10 +568,10 @@ Return JSON with format: { "searchQueries": ["site:...", "site:..."] }`;
 
   private getActorForPlatform(platform: string): string | null {
     const actors: Record<string, string> = {
-      instagram: 'apify/instagram-profile-scraper',
-      tiktok: 'apify/tiktok-profile-scraper',
-      youtube: 'apify/youtube-channel-scraper',
-      twitter: 'apify/twitter-profile-scraper',
+      instagram: 'apify/instagram-scraper',
+      tiktok: 'apify/tiktok-scraper',
+      youtube: 'apify/youtube-scraper',
+      twitter: 'apify/twitter-scraper',
     };
     return actors[platform] ?? null;
   }
