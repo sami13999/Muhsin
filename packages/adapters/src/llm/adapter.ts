@@ -51,7 +51,7 @@ interface ModelConfig {
 const MODEL_REGISTRY: Record<LLMTier, ModelConfig> = {
   'T-A': {
     provider: 'groq',
-    model: 'llama-3.1-8b-instant',
+    model: 'openai/gpt-oss-20b',
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
     maxTokens: 1024,
     costPerInputToken: 0.00000005,
@@ -59,7 +59,7 @@ const MODEL_REGISTRY: Record<LLMTier, ModelConfig> = {
   },
   'T-B': {
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
     maxTokens: 4096,
     costPerInputToken: 0.00000059,
@@ -292,7 +292,7 @@ export class LLMAdapter {
           content,
           model: modelConfig.model,
           provider: modelConfig.provider,
-          tier: modelConfig.provider === 'groq' && modelConfig.model.includes('8b') ? 'T-A' : modelConfig.provider === 'groq' ? 'T-B' : 'T-C',
+          tier: modelConfig.provider === 'groq' && (modelConfig.model.includes('20b') || modelConfig.model.includes('8b')) ? 'T-A' : modelConfig.provider === 'groq' ? 'T-B' : 'T-C',
           usage: { input: usage.prompt_tokens, output: usage.completion_tokens },
           costUsd,
         },
