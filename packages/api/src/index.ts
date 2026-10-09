@@ -18,8 +18,8 @@ import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 import type { Database } from '@mushin/database';
 import { getDb } from '@mushin/database';
-import type { MeilisearchAdapter, LLMAdapter, BillingProvider } from '@mushin/adapters';
-import { createMeilisearchAdapter, createLLMAdapter, createPaddleAdapter } from '@mushin/adapters';
+import type { MeilisearchAdapter, LLMAdapter, BillingProvider, SerperAdapter, ApifyAdapter } from '@mushin/adapters';
+import { createMeilisearchAdapter, createLLMAdapter, createPaddleAdapter, createSerperAdapter, createApifyAdapter } from '@mushin/adapters';
 import { createLogger, registerHealthCheck, createDatabaseCheck } from '@mushin/shared';
 import { tenancyMiddleware, staffOnly } from './middleware/tenancy.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -57,6 +57,8 @@ export interface AppConfig {
   meilisearchApiKey?: string;
   groqApiKey?: string;
   anthropicApiKey?: string;
+  serperApiKey?: string;
+  apifyApiKey?: string;
   paddleApiKey?: string;
   paddleWebhookSecret?: string;
   paddleEnvironment?: 'sandbox' | 'production';
@@ -607,8 +609,16 @@ export function createApp(config: AppConfig = {}): Hono {
   app.route('/api/v1', createRefreshRoutes(db));
   app.route('/api/v1/creators', createErasureRoutes);
 
-  // M3 — Search (filtered + NL + quote + trending)
-  app.route('/api/v1', createM3Routes(meilisearch, llm, db));
+  const serper = createSerperAdapter({
+    apiKey: config.serperApiKey ?? process.env['SERPER_API_KEY'] ?? 'mock-serper-key',
+  });
+
+  const apify = createApifyAdapter({
+    apiKey: config.apifyApiKey ?? process.env['APIFY_API_KEY'] ?? process.env['APIFY_TOKEN'] ?? 'mock-apify-key',
+  });
+
+  // M3 — Search (filtered + NL + live discovery + quote + trending)
+  app.route('/api/v1', createM3Routes(meilisearch, llm, db, serper, apify));
 
   // M8 — CRM (lists & campaigns)
   const crmService = createCRMService(db);

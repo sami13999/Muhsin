@@ -45,6 +45,14 @@ vi.mock('@mushin/adapters', () => ({
   createLLMAdapter: vi.fn().mockReturnValue({
     call: vi.fn(),
   }),
+  createSerperAdapter: vi.fn().mockReturnValue({
+    search: vi.fn().mockResolvedValue([]),
+    health: vi.fn().mockResolvedValue({ status: 'healthy' }),
+  }),
+  createApifyAdapter: vi.fn().mockReturnValue({
+    runActor: vi.fn().mockResolvedValue([]),
+    health: vi.fn().mockResolvedValue({ status: 'healthy' }),
+  }),
   createPaddleAdapter: vi.fn().mockReturnValue(null),
   createWhatsAppAdapter: vi.fn().mockReturnValue({
     sendMessage: vi.fn().mockResolvedValue({ success: true, messageId: 'waba-test-123' }),
