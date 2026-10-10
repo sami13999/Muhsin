@@ -15,6 +15,8 @@ export interface CreatorProfileData {
   niche: string;
   iqScore: number;
   verified?: boolean;
+  avatarUrl?: string;
+  bio?: string;
 }
 
 interface CreatorProfilePanelProps {
@@ -43,6 +45,8 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose, onDed
     niche: creator?.niche || 'Lifestyle',
     iqScore: creator?.iqScore || 92,
     verified: creator?.verified !== undefined ? creator.verified : true,
+    avatarUrl: creator?.avatarUrl,
+    bio: creator?.bio,
   });
 
   const [contactDetails, setContactDetails] = useState<{
@@ -286,7 +290,7 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose, onDed
             >
               <div style={{ position: 'relative' }}>
                 <img
-                  src={getAvatar(profile.displayName)}
+                  src={profile.avatarUrl || getAvatar(profile.displayName)}
                   alt={profile.displayName}
                   style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #ffffff', boxShadow: '0 4px 6px rgba(0,0,0,0.08)' }}
                 />
@@ -320,8 +324,16 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose, onDed
                   <span style={{ color: profile.platform === 'youtube' ? '#ff0000' : profile.platform === 'instagram' ? '#e1306c' : '#000000' }}>
                     {profile.platform === 'youtube' ? '▶ YouTube' : profile.platform === 'instagram' ? '📷 Instagram' : '🎵 TikTok'}
                   </span>
-                  <span>.</span>
-                  <span>{profile.primaryHandle}</span>
+                  <span>•</span>
+                  <a
+                    href={profile.platform === 'youtube' ? `https://www.youtube.com/@${profile.primaryHandle.replace(/^@/, '')}` : profile.platform === 'tiktok' ? `https://www.tiktok.com/@${profile.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${profile.primaryHandle.replace(/^@/, '')}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#4f46e5', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}
+                    title="Open real profile on social media"
+                  >
+                    {profile.primaryHandle} ↗
+                  </a>
                 </div>
 
                 <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
@@ -331,6 +343,12 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose, onDed
                   <span>|</span>
                   <span style={{ background: '#ecfdf5', color: '#047857', padding: '2px 8px', borderRadius: '6px', fontWeight: 600 }}>IQ {profile.iqScore}</span>
                 </div>
+
+                {profile.bio && (
+                  <p style={{ fontSize: '12px', color: '#475569', margin: '8px 0 0', lineHeight: 1.5, fontStyle: 'italic' }}>
+                    "{profile.bio}"
+                  </p>
+                )}
               </div>
 
               {/* Direct WhatsApp Action Button */}
@@ -446,6 +464,52 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose, onDed
                       </button>
                     </div>
                   )}
+                </div>
+
+                {/* Official Social Media Channel Source Card */}
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Official Social Media Channel
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      ✓ Verified Real Creator
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <span style={{ fontSize: '18px' }}>
+                        {profile.platform === 'youtube' ? '▶' : profile.platform === 'tiktok' ? '🎵' : '📷'}
+                      </span>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{profile.displayName}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>
+                          {profile.platform === 'youtube' ? `https://www.youtube.com/@${profile.primaryHandle.replace(/^@/, '')}` : profile.platform === 'tiktok' ? `https://www.tiktok.com/@${profile.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${profile.primaryHandle.replace(/^@/, '')}/`}
+                        </div>
+                      </div>
+                    </div>
+                    <a
+                      href={profile.platform === 'youtube' ? `https://www.youtube.com/@${profile.primaryHandle.replace(/^@/, '')}` : profile.platform === 'tiktok' ? `https://www.tiktok.com/@${profile.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${profile.primaryHandle.replace(/^@/, '')}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        background: '#0f172a',
+                        color: '#ffffff',
+                        textDecoration: 'none',
+                        padding: '6px 14px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        flexShrink: 0,
+                        marginLeft: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      Visit Profile ↗
+                    </a>
+                  </div>
                 </div>
 
                 {/* Additional WhatsApp Info Block */}

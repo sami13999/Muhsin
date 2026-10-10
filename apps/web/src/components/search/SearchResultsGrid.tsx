@@ -35,11 +35,20 @@ export default function SearchResultsGrid({
 }: SearchResultsGridProps) {
   // Map creators to mock design data if matching specific names
   const enrichCreator = (creator: Creator) => {
+    if (creator.avatarUrl) {
+      return {
+        ...creator,
+        locationNiche: `${creator.city} • ${creator.niche}`,
+        tags: [`#${creator.niche.toLowerCase().replace(/[^a-z0-9]/g, '')}`, `#${creator.city.toLowerCase()}`],
+        authScore: creator.iqScore,
+        iqScore: creator.iqScore,
+      };
+    }
     if (creator.displayName === 'Sana Riaz') {
       return {
         ...creator,
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        locationNiche: 'Karachi . Lifestyle . Bridal',
+        locationNiche: 'Karachi • Lifestyle • Bridal',
         tags: ['#bridal', '#karachi'],
         authScore: 92,
         iqScore: 89
@@ -49,7 +58,7 @@ export default function SearchResultsGrid({
       return {
         ...creator,
         avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-        locationNiche: 'Karachi . Food . Travel',
+        locationNiche: 'Karachi • Food • Travel',
         tags: ['#food', '#karachi'],
         authScore: 91,
         iqScore: 88
@@ -58,7 +67,7 @@ export default function SearchResultsGrid({
     return {
       ...creator,
       avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      locationNiche: `${creator.city} . ${creator.niche}`,
+      locationNiche: `${creator.city} • ${creator.niche}`,
       tags: ['#creator', `#${creator.city.toLowerCase()}`],
       authScore: creator.iqScore,
       iqScore: creator.iqScore - 3
@@ -154,7 +163,25 @@ export default function SearchResultsGrid({
                     </svg>
                   )}
                 </div>
-                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{creator.primaryHandle}</div>
+                <a
+                  href={creator.platform === 'youtube' ? `https://www.youtube.com/@${creator.primaryHandle.replace(/^@/, '')}` : creator.platform === 'tiktok' ? `https://www.tiktok.com/@${creator.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${creator.primaryHandle.replace(/^@/, '')}/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    fontSize: '12px',
+                    color: '#4f46e5',
+                    marginTop: '2px',
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    fontWeight: 600
+                  }}
+                  title="Open authentic profile on social media"
+                >
+                  {creator.primaryHandle} ↗
+                </a>
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" style={{ flexShrink: 0 }}>
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
@@ -218,6 +245,39 @@ export default function SearchResultsGrid({
                 </svg>
                 IQ {creator.iqScore}
               </span>
+            </div>
+
+            {/* Real Verified Social Media Link Badge */}
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '11px',
+            }}>
+              <span style={{ color: '#475569', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 500 }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+                Live Social Source:
+              </span>
+              <a
+                href={creator.platform === 'youtube' ? `https://www.youtube.com/@${creator.primaryHandle.replace(/^@/, '')}` : creator.platform === 'tiktok' ? `https://www.tiktok.com/@${creator.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${creator.primaryHandle.replace(/^@/, '')}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  color: '#4f46e5',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                {creator.platform === 'youtube' ? 'YouTube' : creator.platform === 'tiktok' ? 'TikTok' : 'Instagram'} Profile ↗
+              </a>
             </div>
 
             {/* Action Buttons */}

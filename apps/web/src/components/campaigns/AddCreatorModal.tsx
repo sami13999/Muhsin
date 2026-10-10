@@ -10,12 +10,12 @@ interface AddCreatorModalProps {
 }
 
 const PRESET_CREATORS = [
-  { name: 'Sana Riaz', handle: '@sanaa.k', platform: 'instagram' as const, followers: '412K', authScore: 92, fee: 'Rs. 85,000', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80' },
-  { name: 'Ayesha Malik', handle: '@ayeshamalik', platform: 'instagram' as const, followers: '684K', authScore: 88, fee: 'Rs. 120,000', avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80' },
-  { name: 'Hira Sheikh', handle: '@hira.sheikh', platform: 'instagram' as const, followers: '228K', authScore: 90, fee: 'Rs. 45,000', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80' },
-  { name: 'Zain Ahmed', handle: '@zaintech', platform: 'youtube' as const, followers: '320K', authScore: 94, fee: 'Rs. 150,000', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80' },
-  { name: 'Fatima Ali', handle: '@fatimabeauty', platform: 'instagram' as const, followers: '280K', authScore: 89, fee: 'Rs. 60,000', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80' },
-  { name: 'Hamza Sheikh', handle: '@hamzafitness', platform: 'tiktok' as const, followers: '450K', authScore: 86, fee: 'Rs. 75,000', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80' },
+  { name: 'Shahveer Jafry', handle: '@shahveerjay', platform: 'youtube' as const, followers: '3.4M', authScore: 96, fee: 'Rs. 250,000', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80' },
+  { name: 'Irfan Junejo', handle: '@irfanjunejo', platform: 'youtube' as const, followers: '1.6M', authScore: 97, fee: 'Rs. 200,000', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80' },
+  { name: 'Romaisa Khan', handle: '@romaisakhan.official', platform: 'tiktok' as const, followers: '2.1M', authScore: 94, fee: 'Rs. 120,000', avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80' },
+  { name: 'Arslan Naseer', handle: '@cba_arslan', platform: 'youtube' as const, followers: '1.2M', authScore: 95, fee: 'Rs. 150,000', avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80' },
+  { name: 'Danyal Zafar', handle: '@danyalzee', platform: 'instagram' as const, followers: '890K', authScore: 93, fee: 'Rs. 130,000', avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80' },
+  { name: 'Areeka Haq', handle: '@areeka__haq', platform: 'tiktok' as const, followers: '11.2M', authScore: 98, fee: 'Rs. 300,000', avatarUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=150&auto=format&fit=crop&q=80' },
 ];
 
 export default function AddCreatorModal({ isOpen, onClose, onAddCreator }: AddCreatorModalProps) {

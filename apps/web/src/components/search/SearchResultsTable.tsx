@@ -13,6 +13,8 @@ interface Creator {
   city: string;
   niche: string;
   iqScore: number;
+  avatarUrl?: string;
+  bio?: string;
 }
 
 interface SearchResultsTableProps {
@@ -32,26 +34,10 @@ export default function SearchResultsTable({
 }: SearchResultsTableProps) {
 
   const getCreatorDetails = (creator: Creator) => {
-    if (creator.displayName === 'Sana Riaz') {
-      return {
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-        auth: 92,
-        iq: 89,
-        followers: '412K'
-      };
-    }
-    if (creator.displayName === 'Bilal Hussain') {
-      return {
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
-        auth: 91,
-        iq: 88,
-        followers: '512K'
-      };
-    }
     return {
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+      avatar: creator.avatarUrl || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
       auth: creator.iqScore,
-      iq: creator.iqScore - 3,
+      iq: creator.iqScore,
       followers: creator.followerCount >= 1000000 
         ? `${(creator.followerCount / 1000000).toFixed(1)}M` 
         : `${(creator.followerCount / 1000).toFixed(0)}K`
@@ -116,8 +102,18 @@ export default function SearchResultsTable({
                     />
                     <div>
                       <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '13px' }}>{c.displayName}</div>
-                      <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '2px' }}>
-                        {c.primaryHandle} . {c.city}
+                      <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <a
+                          href={c.platform === 'youtube' ? `https://www.youtube.com/@${c.primaryHandle.replace(/^@/, '')}` : c.platform === 'tiktok' ? `https://www.tiktok.com/@${c.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${c.primaryHandle.replace(/^@/, '')}/`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ color: '#4f46e5', fontWeight: 600, textDecoration: 'none' }}
+                          title="Open real profile on social media"
+                        >
+                          {c.primaryHandle} ↗
+                        </a>
+                        <span>• {c.city}</span>
                       </div>
                     </div>
                   </div>
