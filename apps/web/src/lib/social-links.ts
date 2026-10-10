@@ -106,6 +106,71 @@ export function getVerifiedSocialUrl(creator: CreatorSocialMeta): string {
     return 'https://www.tiktok.com/@zulqarnaintwoker';
   }
 
+  // 16. Dananeer Mobeen (Instagram: @dananeerr)
+  if (name.includes('dananeer') || handle.includes('dananeer')) {
+    return 'https://www.instagram.com/dananeerr/';
+  }
+
+  // 17. Merium Pervaiz (YouTube: @MeriumPervaiz)
+  if (name.includes('merium') || handle.includes('merium')) {
+    return 'https://www.youtube.com/@MeriumPervaiz';
+  }
+
+  // 18. Ali Zafar (YouTube: @AliZafarOfficial)
+  if (name.includes('ali zafar') || handle.includes('alizafar')) {
+    return 'https://www.youtube.com/@AliZafarOfficial';
+  }
+
+  // 19. Hania Aamir (Instagram: @haniaheheofficial)
+  if (name.includes('hania') || handle.includes('hania')) {
+    return 'https://www.instagram.com/haniaheheofficial/';
+  }
+
+  // 20. Babar Azam (Instagram: @babarazam)
+  if (name.includes('babar') || handle.includes('babar')) {
+    return 'https://www.instagram.com/babarazam/';
+  }
+
+  // 21. Laraib Rahim (Instagram: @laraib_rahim)
+  if (name.includes('laraib') || handle.includes('laraib')) {
+    return 'https://www.instagram.com/laraib_rahim/';
+  }
+
+  // 22. Sistrology / Iqra Kanwal (YouTube: @sistrology)
+  if (name.includes('sistrology') || handle.includes('sistrology') || name.includes('iqra kanwal')) {
+    return 'https://www.youtube.com/@sistrology';
+  }
+
+  // 23. Rana Hamza Saif / RHS (YouTube: @ranahamzasaif)
+  if (name.includes('hamza saif') || handle.includes('ranahamzasaif') || name.includes('rhs')) {
+    return 'https://www.youtube.com/@ranahamzasaif';
+  }
+
+  // 24. Ken Doll Dubai / Adnan Zafar (Instagram: @ken_doll_dubai)
+  if (name.includes('ken doll') || handle.includes('ken_doll') || name.includes('adnan zafar')) {
+    return 'https://www.instagram.com/ken_doll_dubai/';
+  }
+
+  // 25. Alishba Anjum (TikTok: @alishbaanjum)
+  if (name.includes('alishba') || handle.includes('alishba')) {
+    return 'https://www.tiktok.com/@alishbaanjum';
+  }
+
+  // 26. Ukhano / Umar Khan (YouTube: @ukhano)
+  if (name.includes('ukhano') || handle.includes('ukhano') || name.includes('umar khan')) {
+    return 'https://www.youtube.com/@ukhano';
+  }
+
+  // 27. Rabeeca Khan (TikTok: @rabeecakhan)
+  if (name.includes('rabeeca') || handle.includes('rabeeca')) {
+    return 'https://www.tiktok.com/@rabeecakhan';
+  }
+
+  // 28. Hamza Bhatti (Instagram: @hamzathebhatti)
+  if (name.includes('hamza bhatti') || handle.includes('hamzathebhatti') || handle.includes('bhatti')) {
+    return 'https://www.instagram.com/hamzathebhatti/';
+  }
+
   // Generic fallback based on platform
   if (platform === 'youtube') {
     return `https://www.youtube.com/@${handle}`;
@@ -179,6 +244,58 @@ export function getVerifiedAvatarUrl(creator: { displayName?: string; primaryHan
   // 15. Zulqarnain Sikandar
   if (name.includes('zulqarnain') || handle.includes('zulqarnain')) {
     return '/creators/zulqarnain-sikandar.jpg';
+  }
+  // 16. Dananeer Mobeen
+  if (name.includes('dananeer') || handle.includes('dananeer')) {
+    return '/creators/dananeer-mobeen.jpg';
+  }
+  // 17. Merium Pervaiz
+  if (name.includes('merium') || handle.includes('merium')) {
+    return '/creators/merium-pervaiz.jpg';
+  }
+  // 18. Ali Zafar
+  if (name.includes('ali zafar') || handle.includes('alizafar')) {
+    return '/creators/ali-zafar.jpg';
+  }
+  // 19. Hania Aamir
+  if (name.includes('hania') || handle.includes('hania')) {
+    return '/creators/hania-aamir.jpg';
+  }
+  // 20. Babar Azam
+  if (name.includes('babar') || handle.includes('babar')) {
+    return '/creators/babar-azam.jpg';
+  }
+  // 21. Laraib Rahim
+  if (name.includes('laraib') || handle.includes('laraib')) {
+    return '/creators/laraib-rahim.jpg';
+  }
+  // 22. Sistrology / Iqra Kanwal
+  if (name.includes('sistrology') || handle.includes('sistrology') || name.includes('iqra kanwal')) {
+    return '/creators/sistrology.jpg';
+  }
+  // 23. Rana Hamza Saif (RHS)
+  if (name.includes('hamza saif') || handle.includes('ranahamzasaif') || name.includes('rhs')) {
+    return '/creators/rana-hamza-saif.jpg';
+  }
+  // 24. Ken Doll Dubai / Adnan Zafar
+  if (name.includes('ken doll') || handle.includes('ken_doll') || name.includes('adnan zafar')) {
+    return '/creators/ken-doll.jpg';
+  }
+  // 25. Alishba Anjum
+  if (name.includes('alishba') || handle.includes('alishba')) {
+    return '/creators/alishba-anjum.jpg';
+  }
+  // 26. Ukhano / Umar Khan
+  if (name.includes('ukhano') || handle.includes('ukhano') || name.includes('umar khan')) {
+    return '/creators/ukhano.jpg';
+  }
+  // 27. Rabeeca Khan
+  if (name.includes('rabeeca') || handle.includes('rabeeca')) {
+    return '/creators/rabeeca-khan.jpg';
+  }
+  // 28. Hamza Bhatti
+  if (name.includes('hamza bhatti') || handle.includes('hamzathebhatti') || handle.includes('bhatti')) {
+    return '/creators/hamza-bhatti.jpg';
   }
 
   if (creator.avatarUrl && !creator.avatarUrl.includes('images.unsplash.com')) {

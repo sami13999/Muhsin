@@ -127,13 +127,18 @@ export default function SearchResultsGrid({
               </div>
 
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                   <h4 style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', margin: 0 }}>{creator.displayName}</h4>
                   {creator.verified && (
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
                       <circle cx="7" cy="7" r="7" fill="#3b82f6"/>
                       <path d="M4.5 7L6 8.5L9.5 5" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
+                  )}
+                  {(creator as any).isLive && (
+                    <span style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '4px' }}>
+                      📡 Live Discovered
+                    </span>
                   )}
                 </div>
                 <a

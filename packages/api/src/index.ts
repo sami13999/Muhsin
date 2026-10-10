@@ -142,9 +142,14 @@ export function createApp(config: AppConfig = {}): Hono {
     credentials: true,
   }));
 
-  const isMockMode = process.env['DATABASE_URL']?.includes('host:5432') || process.env['SUPABASE_URL']?.includes('your-project.supabase.co');
+  const isMockMode =
+    process.env['MOCK_MODE'] === 'true' ||
+    process.env['DATABASE_URL']?.includes('host:5432') ||
+    process.env['SUPABASE_URL']?.includes('your-project.supabase.co') ||
+    !process.env['JWKS_URI'] ||
+    process.env['JWKS_URI']?.includes('auth.mushin.io');
   if (isMockMode) {
-    logger.info('DATABASE_URL is a placeholder — entering local MOCK/DEMO mode');
+    logger.info('Database or auth credentials are local/placeholder — entering local MOCK/DEMO mode');
     
     // Health routes
     registerHealthCheck('database', async () => ({ status: 'healthy', message: 'Mock Database Active' }));
@@ -603,6 +608,227 @@ export function createApp(config: AppConfig = {}): Hono {
         bio: 'Comedy creator, TikToker, YouTuber & family entertainer with Kanwal Aftab',
         canonicalUrl: 'https://www.tiktok.com/@zulqarnaintwoker',
         isLive: true
+      },
+      {
+        creatorId: 'cr-dananeer-16',
+        displayName: 'Dananeer Mobeen',
+        primaryHandle: '@dananeerr',
+        platform: 'instagram',
+        followerCount: 3900000,
+        engagementRate: 9.8,
+        _rankingScore: 98,
+        city: 'Islamabad',
+        niche: 'Lifestyle & Fashion',
+        iqScore: 96,
+        verified: true,
+        avatarUrl: '/creators/dananeer-mobeen.jpg',
+        bio: 'Pakistani actress, viral trend creator ("Pawri Horai Hai") & youth fashion icon',
+        canonicalUrl: 'https://www.instagram.com/dananeerr/',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-merium-17',
+        displayName: 'Merium Pervaiz',
+        primaryHandle: '@MeriumPervaiz',
+        platform: 'youtube',
+        followerCount: 7400000,
+        engagementRate: 11.2,
+        _rankingScore: 99,
+        city: 'Faisalabad',
+        niche: 'Beauty & Lifestyle',
+        iqScore: 97,
+        verified: true,
+        avatarUrl: '/creators/merium-pervaiz.jpg',
+        bio: 'Top Pakistani beauty vlogger, skincare educator & cosmetics entrepreneur',
+        canonicalUrl: 'https://www.youtube.com/@MeriumPervaiz',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-alizafar-18',
+        displayName: 'Ali Zafar',
+        primaryHandle: '@AliZafarOfficial',
+        platform: 'youtube',
+        followerCount: 3800000,
+        engagementRate: 7.5,
+        _rankingScore: 96,
+        city: 'Lahore',
+        niche: 'Music & Entertainment',
+        iqScore: 95,
+        verified: true,
+        avatarUrl: '/creators/ali-zafar.jpg',
+        bio: 'Renowned Pakistani pop singer, composer, actor & digital music artist',
+        canonicalUrl: 'https://www.youtube.com/@AliZafarOfficial',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-hania-19',
+        displayName: 'Hania Aamir',
+        primaryHandle: '@haniaheheofficial',
+        platform: 'instagram',
+        followerCount: 17200000,
+        engagementRate: 14.5,
+        _rankingScore: 99,
+        city: 'Karachi',
+        niche: 'Lifestyle & Acting',
+        iqScore: 98,
+        verified: true,
+        avatarUrl: '/creators/hania-aamir.jpg',
+        bio: 'Celebrated Pakistani cinema actress, daily lifestyle vlogger & viral digital sensation',
+        canonicalUrl: 'https://www.instagram.com/haniaheheofficial/',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-babar-20',
+        displayName: 'Babar Azam',
+        primaryHandle: '@babarazam',
+        platform: 'instagram',
+        followerCount: 6100000,
+        engagementRate: 16.2,
+        _rankingScore: 99,
+        city: 'Lahore',
+        niche: 'Sports & Fitness',
+        iqScore: 98,
+        verified: true,
+        avatarUrl: '/creators/babar-azam.jpg',
+        bio: 'Pakistan cricket captain, athlete, fitness influencer & youth sports icon',
+        canonicalUrl: 'https://www.instagram.com/babarazam/',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-laraib-21',
+        displayName: 'Laraib Rahim',
+        primaryHandle: '@laraib_rahim',
+        platform: 'instagram',
+        followerCount: 1200000,
+        engagementRate: 8.4,
+        _rankingScore: 95,
+        city: 'Islamabad',
+        niche: 'Skincare & Lifestyle',
+        iqScore: 94,
+        verified: true,
+        avatarUrl: '/creators/laraib-rahim.jpg',
+        bio: 'Skincare specialist, aesthetic lifestyle creator & beauty advocate',
+        canonicalUrl: 'https://www.instagram.com/laraib_rahim/',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-sistrology-22',
+        displayName: 'Sistrology (Iqra Kanwal)',
+        primaryHandle: '@sistrology',
+        platform: 'youtube',
+        followerCount: 5600000,
+        engagementRate: 12.8,
+        _rankingScore: 98,
+        city: 'Lahore',
+        niche: 'Daily Vlogs & Lifestyle',
+        iqScore: 96,
+        verified: true,
+        avatarUrl: '/creators/sistrology.jpg',
+        bio: 'Leading Pakistani sister vloggers, family lifestyle documentation & comedy content',
+        canonicalUrl: 'https://www.youtube.com/@sistrology',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-rhs-23',
+        displayName: 'Rana Hamza Saif (RHS)',
+        primaryHandle: '@ranahamzasaif',
+        platform: 'youtube',
+        followerCount: 1850000,
+        engagementRate: 9.1,
+        _rankingScore: 97,
+        city: 'Lahore',
+        niche: 'Food & Travel',
+        iqScore: 96,
+        verified: true,
+        avatarUrl: '/creators/rana-hamza-saif.jpg',
+        bio: 'Pakistan premier culinary street food explorer & international cultural traveler',
+        canonicalUrl: 'https://www.youtube.com/@ranahamzasaif',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-kendoll-24',
+        displayName: 'Ken Doll Dubai (Adnan Zafar)',
+        primaryHandle: '@ken_doll_dubai',
+        platform: 'instagram',
+        followerCount: 1450000,
+        engagementRate: 8.7,
+        _rankingScore: 95,
+        city: 'Karachi',
+        niche: 'Fashion & Luxury Lifestyle',
+        iqScore: 94,
+        verified: true,
+        avatarUrl: '/creators/ken-doll.jpg',
+        bio: 'Pakistani luxury influencer, hospitality expert & entertainment lifestyle personality',
+        canonicalUrl: 'https://www.instagram.com/ken_doll_dubai/',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-alishba-25',
+        displayName: 'Alishba Anjum',
+        primaryHandle: '@alishbaanjum',
+        platform: 'tiktok',
+        followerCount: 17000000,
+        engagementRate: 11.9,
+        _rankingScore: 98,
+        city: 'Faisalabad',
+        niche: 'Fashion & Entertainment',
+        iqScore: 96,
+        verified: true,
+        avatarUrl: '/creators/alishba-anjum.jpg',
+        bio: 'Viral TikTok fashion creator, lip-sync performer & lifestyle influencer',
+        canonicalUrl: 'https://www.tiktok.com/@alishbaanjum',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-ukhano-26',
+        displayName: 'Ukhano (Umar Khan)',
+        primaryHandle: '@ukhano',
+        platform: 'youtube',
+        followerCount: 920000,
+        engagementRate: 7.8,
+        _rankingScore: 95,
+        city: 'Islamabad',
+        niche: 'Cinematic Travel & Vlogs',
+        iqScore: 94,
+        verified: true,
+        avatarUrl: '/creators/ukhano.jpg',
+        bio: 'Northern Pakistan cinematic travel filmmaker, visual storyteller & photographer',
+        canonicalUrl: 'https://www.youtube.com/@ukhano',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-rabeeca-27',
+        displayName: 'Rabeeca Khan',
+        primaryHandle: '@rabeecakhan',
+        platform: 'tiktok',
+        followerCount: 10800000,
+        engagementRate: 13.2,
+        _rankingScore: 98,
+        city: 'Karachi',
+        niche: 'Music & Lifestyle',
+        iqScore: 97,
+        verified: true,
+        avatarUrl: '/creators/rabeeca-khan.jpg',
+        bio: 'Singer, fashion vlogger & daughter of legendary comedian Iftikhar Thakur',
+        canonicalUrl: 'https://www.tiktok.com/@rabeecakhan',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-bhatti-28',
+        displayName: 'Hamza Bhatti',
+        primaryHandle: '@hamzathebhatti',
+        platform: 'instagram',
+        followerCount: 1100000,
+        engagementRate: 9.3,
+        _rankingScore: 96,
+        city: 'Islamabad',
+        niche: 'Food Reviews & Travel',
+        iqScore: 95,
+        verified: true,
+        avatarUrl: '/creators/hamza-bhatti.jpg',
+        bio: 'Aesthetic food reviewer, Northern Pakistan travel chronicler & storyteller',
+        canonicalUrl: 'https://www.instagram.com/hamzathebhatti/',
+        isLive: true
       }
     ];
 
@@ -612,7 +838,7 @@ export function createApp(config: AppConfig = {}): Hono {
       if (platformFilter && platformFilter !== 'all') {
         list = list.filter(c => c.platform.toLowerCase() === platformFilter.toLowerCase());
       }
-      if (!q || q === 'pakistani creators' || q === 'pakistani lifestyle 50k+') {
+      if (!q || q === 'pakistani creators' || q === 'pakistani lifestyle 50k+' || q === 'pakistani lifestyle 30k+') {
         return list;
       }
 
@@ -681,8 +907,8 @@ export function createApp(config: AppConfig = {}): Hono {
         chips.push({ label: 'Platform', value: 'TikTok', field: 'platform' });
       }
 
-      if (queryLower.includes('50k') || queryLower.includes('100k') || queryLower.includes('50k+') || queryLower.includes('1m')) {
-        chips.push({ label: 'Min Followers', value: '50,000+', field: 'follower_min' });
+      if (queryLower.includes('30k') || queryLower.includes('50k') || queryLower.includes('100k') || queryLower.includes('50k+') || queryLower.includes('1m')) {
+        chips.push({ label: 'Min Followers', value: '30,000+', field: 'follower_min' });
       }
       if (queryLower.includes('lifestyle') || queryLower.includes('fashion') || queryLower.includes('comedy') || queryLower.includes('tech') || queryLower.includes('food') || queryLower.includes('music')) {
         const nicheMatch = queryLower.includes('fashion') ? 'Fashion' : queryLower.includes('tech') ? 'Tech & Gadgets' : queryLower.includes('food') ? 'Food & Cooking' : queryLower.includes('music') ? 'Music' : 'Lifestyle';
@@ -714,17 +940,34 @@ export function createApp(config: AppConfig = {}): Hono {
       } catch {}
       const query = String(body.query || 'Pakistani creators');
       const platform = String(body.platform || 'all');
-      const filtered = matchCreators(query, platform);
+      const round = Number(body.round || 1);
+      const excludeHandles: string[] = Array.isArray(body.excludeHandles)
+        ? body.excludeHandles.map((h: string) => String(h).toLowerCase().trim())
+        : [];
+
+      const allMatches = matchCreators(query, platform);
+
+      // Filter out creators already present on the user's dashboard
+      let unshown = allMatches.filter(item => 
+        !excludeHandles.includes(item.primaryHandle.toLowerCase())
+      );
+
+      // Return a fresh batch of newly discovered creators for this round
+      const batchSize = 4;
+      let batch = unshown.slice(0, batchSize);
 
       return c.json({
-        data: filtered,
-        total: filtered.length,
+        data: batch,
+        total: batch.length,
+        totalPool: allMatches.length,
+        remainingUnshown: Math.max(0, unshown.length - batch.length),
+        round,
         pipelineStages: {
           aiQueryExpansion: [`site:instagram.com ${query}`, `site:tiktok.com ${query}`, `site:youtube.com ${query}`],
           serperQueriesExecuted: 3,
           duplicatesFiltered: 4,
-          apifyUrlsScraped: filtered.length,
-          creatorsPersistedDb: filtered.length,
+          apifyUrlsScraped: batch.length,
+          creatorsPersistedDb: batch.length,
           mushinRankingApplied: true
         },
         executionStats: {

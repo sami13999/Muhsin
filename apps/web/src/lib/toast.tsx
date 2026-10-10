@@ -93,7 +93,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const finalDuration = duration ?? defaultDuration;
 
     setToasts((prev) => {
-      const next = [...prev, { id, tone, message, description, duration: finalDuration, undoAction }];
+      // Deduplicate and replace previous search round toasts to avoid stacking
+      const isSearchToast = message.startsWith('Live Discovery') || message.startsWith('Fast Search') || message.startsWith('Discovery');
+      const filtered = isSearchToast 
+        ? prev.filter((t) => !t.message.startsWith('Live Discovery') && !t.message.startsWith('Fast Search') && !t.message.startsWith('Discovery'))
+        : prev;
+      const next = [...filtered, { id, tone, message, description, duration: finalDuration, undoAction }];
       if (next.length > 3) {
         return next.slice(next.length - 3); // Max 3 stacked
       }

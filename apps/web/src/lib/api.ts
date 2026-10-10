@@ -207,7 +207,7 @@ class APIClient {
     }>('POST', '/api/v1/creators/search/nl', { query });
   }
 
-  async searchCreatorsLive(query: string, options?: { platform?: string; niche?: string; location?: string }) {
+  async searchCreatorsLive(query: string, options?: { platform?: string; niche?: string; location?: string; round?: number; excludeHandles?: string[] }) {
     return this.request<{
       data: Array<{
         creatorId: string;

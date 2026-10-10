@@ -103,7 +103,14 @@ export default function SearchResultsTable({
                       style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }}
                     />
                     <div>
-                      <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '13px' }}>{c.displayName}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '13px' }}>{c.displayName}</div>
+                        {(c as any).isLive && (
+                          <span style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '9px', fontWeight: 700, padding: '0 5px', borderRadius: '4px' }}>
+                            📡 Live
+                          </span>
+                        )}
+                      </div>
                       <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <a
                           href={getVerifiedSocialUrl(c)}
