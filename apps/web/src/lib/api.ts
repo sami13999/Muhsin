@@ -156,6 +156,7 @@ class APIClient {
 
   async searchCreators(query: string, filters?: Record<string, unknown>) {
     const params = new URLSearchParams();
+    if (query) params.set('q', query);
     if (filters) {
       for (const [key, value] of Object.entries(filters)) {
         if (value !== undefined && value !== null) {

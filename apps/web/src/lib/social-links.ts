@@ -71,6 +71,41 @@ export function getVerifiedSocialUrl(creator: CreatorSocialMeta): string {
     return 'https://www.youtube.com/@mooroosicity';
   }
 
+  // 9. Ducky Bhai (Saad Ur Rehman - YouTube: @DuckyBhai)
+  if (name.includes('ducky') || handle.includes('ducky')) {
+    return 'https://www.youtube.com/@DuckyBhai';
+  }
+
+  // 10. Maaz Safder (YouTube: @MaazSafderWorld)
+  if (name.includes('maaz') || handle.includes('maaz')) {
+    return 'https://www.youtube.com/@MaazSafderWorld';
+  }
+
+  // 11. Bilal Munir (VideoWaliSarkar - YouTube: @VideoWaliSarkar1)
+  if (name.includes('bilal') || name.includes('videowalisarkar') || handle.includes('videowalisarkar') || handle.includes('sarkar')) {
+    return 'https://www.youtube.com/@VideoWaliSarkar1';
+  }
+
+  // 12. Mubashir Saddique (Village Food Secrets - YouTube: @VillageFoodSecrets)
+  if (name.includes('village') || name.includes('mubashir') || handle.includes('village')) {
+    return 'https://www.youtube.com/@VillageFoodSecrets';
+  }
+
+  // 13. Amna Riaz (Kitchen With Amna - YouTube: @KitchenWithAmna)
+  if (name.includes('amna') || handle.includes('amna') || name.includes('kitchen')) {
+    return 'https://www.youtube.com/@KitchenWithAmna';
+  }
+
+  // 14. Jannat Mirza (TikTok: @jannatmirza)
+  if (name.includes('jannat') || handle.includes('jannat')) {
+    return 'https://www.tiktok.com/@jannatmirza';
+  }
+
+  // 15. Zulqarnain Sikandar (TikTok: @zulqarnaintwoker)
+  if (name.includes('zulqarnain') || handle.includes('zulqarnain')) {
+    return 'https://www.tiktok.com/@zulqarnaintwoker';
+  }
+
   // Generic fallback based on platform
   if (platform === 'youtube') {
     return `https://www.youtube.com/@${handle}`;
@@ -116,6 +151,34 @@ export function getVerifiedAvatarUrl(creator: { displayName?: string; primaryHan
   // 8. Mooroo
   if (name.includes('mooroo') || handle.includes('mooroo')) {
     return '/creators/mooroo.jpg';
+  }
+  // 9. Ducky Bhai
+  if (name.includes('ducky') || handle.includes('ducky')) {
+    return '/creators/ducky-bhai.jpg';
+  }
+  // 10. Maaz Safder
+  if (name.includes('maaz') || handle.includes('maaz')) {
+    return '/creators/maaz-safder.jpg';
+  }
+  // 11. Bilal Munir / VideoWaliSarkar
+  if (name.includes('bilal') || name.includes('videowalisarkar') || handle.includes('videowalisarkar') || handle.includes('sarkar')) {
+    return '/creators/bilal-munir.jpg';
+  }
+  // 12. Village Food Secrets
+  if (name.includes('village') || name.includes('mubashir') || handle.includes('village')) {
+    return '/creators/village-food-secrets.jpg';
+  }
+  // 13. Kitchen With Amna
+  if (name.includes('amna') || handle.includes('amna') || name.includes('kitchen')) {
+    return '/creators/kitchen-with-amna.jpg';
+  }
+  // 14. Jannat Mirza
+  if (name.includes('jannat') || handle.includes('jannat')) {
+    return '/creators/jannat-mirza.jpg';
+  }
+  // 15. Zulqarnain Sikandar
+  if (name.includes('zulqarnain') || handle.includes('zulqarnain')) {
+    return '/creators/zulqarnain-sikandar.jpg';
   }
 
   if (creator.avatarUrl && !creator.avatarUrl.includes('images.unsplash.com')) {

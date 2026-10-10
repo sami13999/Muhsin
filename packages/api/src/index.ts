@@ -484,16 +484,181 @@ export function createApp(config: AppConfig = {}): Hono {
         bio: 'Taimoor Salahuddin (Mooroo) - Musician, filmmaker & top Pakistani podcaster',
         canonicalUrl: 'https://www.youtube.com/@mooroosicity',
         isLive: true
+      },
+      {
+        creatorId: 'cr-ducky-09',
+        displayName: 'Ducky Bhai',
+        primaryHandle: '@DuckyBhai',
+        platform: 'youtube',
+        followerCount: 8200000,
+        engagementRate: 14.8,
+        _rankingScore: 99,
+        city: 'Lahore',
+        niche: 'Gaming, Roasting & Vlogs',
+        iqScore: 98,
+        verified: true,
+        avatarUrl: '/creators/ducky-bhai.jpg',
+        bio: 'Saad Ur Rehman (Ducky Bhai) - Pakistan top gaming, roasting & viral daily vlogger',
+        canonicalUrl: 'https://www.youtube.com/@DuckyBhai',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-maaz-10',
+        displayName: 'Maaz Safder',
+        primaryHandle: '@MaazSafderWorld',
+        platform: 'youtube',
+        followerCount: 4800000,
+        engagementRate: 11.2,
+        _rankingScore: 98,
+        city: 'Karachi',
+        niche: 'Daily Vlogs & Family',
+        iqScore: 96,
+        verified: true,
+        avatarUrl: '/creators/maaz-safder.jpg',
+        bio: 'Pakistani daily family vlogger, travel content creator & lifestyle influencer',
+        canonicalUrl: 'https://www.youtube.com/@MaazSafderWorld',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-bilal-11',
+        displayName: 'Bilal Munir (VideoWaliSarkar)',
+        primaryHandle: '@VideoWaliSarkar1',
+        platform: 'youtube',
+        followerCount: 3100000,
+        engagementRate: 8.5,
+        _rankingScore: 97,
+        city: 'Lahore',
+        niche: 'Tech & Gadgets',
+        iqScore: 96,
+        verified: true,
+        avatarUrl: '/creators/bilal-munir.jpg',
+        bio: 'Pakistan premier technology reviewer, smartphone unboxer & gadget expert',
+        canonicalUrl: 'https://www.youtube.com/@VideoWaliSarkar1',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-village-12',
+        displayName: 'Village Food Secrets',
+        primaryHandle: '@VillageFoodSecrets',
+        platform: 'youtube',
+        followerCount: 4300000,
+        engagementRate: 9.8,
+        _rankingScore: 98,
+        city: 'Sialkot',
+        niche: 'Food & Cooking',
+        iqScore: 97,
+        verified: true,
+        avatarUrl: '/creators/village-food-secrets.jpg',
+        bio: 'Mubashir Saddique - Traditional Pakistani village recipes, outdoor cooking & organic food',
+        canonicalUrl: 'https://www.youtube.com/@VillageFoodSecrets',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-amna-13',
+        displayName: 'Kitchen With Amna',
+        primaryHandle: '@KitchenWithAmna',
+        platform: 'youtube',
+        followerCount: 4500000,
+        engagementRate: 8.9,
+        _rankingScore: 97,
+        city: 'Lahore',
+        niche: 'Food & Recipes',
+        iqScore: 95,
+        verified: true,
+        avatarUrl: '/creators/kitchen-with-amna.jpg',
+        bio: 'Amna Riaz - Easy Pakistani home cooking recipes, baking tutorials & street food',
+        canonicalUrl: 'https://www.youtube.com/@KitchenWithAmna',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-jannat-14',
+        displayName: 'Jannat Mirza',
+        primaryHandle: '@jannatmirza',
+        platform: 'tiktok',
+        followerCount: 25000000,
+        engagementRate: 15.6,
+        _rankingScore: 99,
+        city: 'Faisalabad',
+        niche: 'Fashion & Acting',
+        iqScore: 98,
+        verified: true,
+        avatarUrl: '/creators/jannat-mirza.jpg',
+        bio: 'Top Pakistani TikTok star, fashion model & cinema actress',
+        canonicalUrl: 'https://www.tiktok.com/@jannatmirza',
+        isLive: true
+      },
+      {
+        creatorId: 'cr-zulqarnain-15',
+        displayName: 'Zulqarnain Sikandar',
+        primaryHandle: '@zulqarnaintwoker',
+        platform: 'tiktok',
+        followerCount: 16500000,
+        engagementRate: 12.4,
+        _rankingScore: 98,
+        city: 'Lahore',
+        niche: 'Comedy & Vlogs',
+        iqScore: 96,
+        verified: true,
+        avatarUrl: '/creators/zulqarnain-sikandar.jpg',
+        bio: 'Comedy creator, TikToker, YouTuber & family entertainer with Kanwal Aftab',
+        canonicalUrl: 'https://www.tiktok.com/@zulqarnaintwoker',
+        isLive: true
       }
     ];
 
-    app.get('/api/v1/creators/search', (c) => c.json({
-      data: VERIFIED_REAL_CREATORS,
-      total: VERIFIED_REAL_CREATORS.length,
-      page: 1,
-      limit: 10,
-      meta: { request_id: 'mock-request-id' }
-    }));
+    const matchCreators = (query: string, platformFilter?: string) => {
+      const q = (query || '').toLowerCase().trim();
+      let list = VERIFIED_REAL_CREATORS;
+      if (platformFilter && platformFilter !== 'all') {
+        list = list.filter(c => c.platform.toLowerCase() === platformFilter.toLowerCase());
+      }
+      if (!q || q === 'pakistani creators' || q === 'pakistani lifestyle 50k+') {
+        return list;
+      }
+
+      const tokens = q.split(/[\s,+/]+/).filter(t => t.length > 1);
+
+      const scored = list.map(creator => {
+        let score = 0;
+        const name = creator.displayName.toLowerCase();
+        const handle = creator.primaryHandle.toLowerCase();
+        const niche = creator.niche.toLowerCase();
+        const city = creator.city.toLowerCase();
+        const bio = (creator.bio || '').toLowerCase();
+        const platform = creator.platform.toLowerCase();
+
+        if (name.includes(q) || handle.includes(q)) score += 100;
+        if (niche.includes(q)) score += 50;
+        if (bio.includes(q)) score += 30;
+
+        for (const token of tokens) {
+          if (name.includes(token)) score += 30;
+          if (handle.includes(token)) score += 30;
+          if (niche.includes(token)) score += 20;
+          if (city.includes(token)) score += 15;
+          if (platform.includes(token)) score += 15;
+          if (bio.includes(token)) score += 10;
+        }
+
+        return { creator, score };
+      });
+
+      const matches = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score).map(s => s.creator);
+      return matches;
+    };
+
+    app.get('/api/v1/creators/search', (c) => {
+      const q = c.req.query('q') || c.req.query('query') || '';
+      const platform = c.req.query('platform') || 'all';
+      const results = matchCreators(q, platform);
+      return c.json({
+        data: results,
+        total: results.length,
+        page: 1,
+        limit: 20,
+        meta: { request_id: 'mock-request-id' }
+      });
+    });
 
     app.post('/api/v1/creators/search/nl', async (c) => {
       let body: any = {};
@@ -519,15 +684,15 @@ export function createApp(config: AppConfig = {}): Hono {
       if (queryLower.includes('50k') || queryLower.includes('100k') || queryLower.includes('50k+') || queryLower.includes('1m')) {
         chips.push({ label: 'Min Followers', value: '50,000+', field: 'follower_min' });
       }
-      if (queryLower.includes('lifestyle') || queryLower.includes('fashion') || queryLower.includes('comedy') || queryLower.includes('tech') || queryLower.includes('music')) {
-        const nicheMatch = queryLower.includes('fashion') ? 'Fashion' : queryLower.includes('tech') ? 'Technology' : queryLower.includes('music') ? 'Music' : 'Lifestyle';
+      if (queryLower.includes('lifestyle') || queryLower.includes('fashion') || queryLower.includes('comedy') || queryLower.includes('tech') || queryLower.includes('food') || queryLower.includes('music')) {
+        const nicheMatch = queryLower.includes('fashion') ? 'Fashion' : queryLower.includes('tech') ? 'Tech & Gadgets' : queryLower.includes('food') ? 'Food & Cooking' : queryLower.includes('music') ? 'Music' : 'Lifestyle';
         chips.push({ label: 'Niche', value: nicheMatch, field: 'niche' });
       }
       if (queryLower.includes('karachi') || queryLower.includes('lahore') || queryLower.includes('pakistani') || queryLower.includes('pk')) {
         chips.push({ label: 'Geography', value: 'Pakistan (PK)', field: 'geo' });
       }
 
-      const results = VERIFIED_REAL_CREATORS.filter((item) => platform === 'all' || item.platform === platform);
+      const results = matchCreators(query, platform);
 
       return c.json({
         interpretation: {
@@ -548,22 +713,8 @@ export function createApp(config: AppConfig = {}): Hono {
         body = await c.req.json();
       } catch {}
       const query = String(body.query || 'Pakistani creators');
-      const queryLower = query.toLowerCase();
-
-      // Filter by query if present
-      let filtered = VERIFIED_REAL_CREATORS;
-      if (queryLower && queryLower !== 'pakistani creators') {
-        const matched = VERIFIED_REAL_CREATORS.filter((item) => 
-          item.displayName.toLowerCase().includes(queryLower) ||
-          item.primaryHandle.toLowerCase().includes(queryLower) ||
-          item.platform.toLowerCase().includes(queryLower) ||
-          item.city.toLowerCase().includes(queryLower) ||
-          item.niche.toLowerCase().includes(queryLower)
-        );
-        if (matched.length > 0) {
-          filtered = matched;
-        }
-      }
+      const platform = String(body.platform || 'all');
+      const filtered = matchCreators(query, platform);
 
       return c.json({
         data: filtered,
