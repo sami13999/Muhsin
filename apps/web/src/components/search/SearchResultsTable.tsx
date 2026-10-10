@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { getVerifiedSocialUrl } from '@/lib/social-links';
+import { getVerifiedSocialUrl, getVerifiedAvatarUrl } from '@/lib/social-links';
 
 interface Creator {
   creatorId: string;
@@ -37,7 +37,7 @@ export default function SearchResultsTable({
 
   const getCreatorDetails = (creator: Creator) => {
     return {
-      avatar: creator.avatarUrl || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
+      avatar: getVerifiedAvatarUrl(creator),
       auth: creator.iqScore,
       iq: creator.iqScore,
       followers: creator.followerCount >= 1000000 

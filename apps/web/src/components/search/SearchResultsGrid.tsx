@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { getVerifiedSocialUrl } from '@/lib/social-links';
+import { getVerifiedSocialUrl, getVerifiedAvatarUrl } from '@/lib/social-links';
 
 interface Creator {
   creatorId: string;
@@ -35,44 +35,15 @@ export default function SearchResultsGrid({
   onSelectRow,
   onSelectCreatorId
 }: SearchResultsGridProps) {
-  // Map creators to mock design data if matching specific names
+  // Map creators to verified design data with authentic avatars
   const enrichCreator = (creator: Creator) => {
-    if (creator.avatarUrl) {
-      return {
-        ...creator,
-        locationNiche: `${creator.city} • ${creator.niche}`,
-        tags: [`#${creator.niche.toLowerCase().replace(/[^a-z0-9]/g, '')}`, `#${creator.city.toLowerCase()}`],
-        authScore: creator.iqScore,
-        iqScore: creator.iqScore,
-      };
-    }
-    if (creator.displayName === 'Sana Riaz') {
-      return {
-        ...creator,
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        locationNiche: 'Karachi • Lifestyle • Bridal',
-        tags: ['#bridal', '#karachi'],
-        authScore: 92,
-        iqScore: 89
-      };
-    }
-    if (creator.displayName === 'Bilal Hussain') {
-      return {
-        ...creator,
-        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-        locationNiche: 'Karachi • Food • Travel',
-        tags: ['#food', '#karachi'],
-        authScore: 91,
-        iqScore: 88
-      };
-    }
     return {
       ...creator,
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      avatarUrl: getVerifiedAvatarUrl(creator),
       locationNiche: `${creator.city} • ${creator.niche}`,
-      tags: ['#creator', `#${creator.city.toLowerCase()}`],
+      tags: [`#${creator.niche.toLowerCase().replace(/[^a-z0-9]/g, '')}`, `#${creator.city.toLowerCase()}`],
       authScore: creator.iqScore,
-      iqScore: creator.iqScore - 3
+      iqScore: creator.iqScore,
     };
   };
 

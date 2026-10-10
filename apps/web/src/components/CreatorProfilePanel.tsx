@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/lib/toast';
 import { api } from '@/lib/api';
-import { getVerifiedSocialUrl } from '@/lib/social-links';
+import { getVerifiedSocialUrl, getVerifiedAvatarUrl } from '@/lib/social-links';
 
 export interface CreatorProfileData {
   creatorId: string;
@@ -292,7 +292,7 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose, onDed
             >
               <div style={{ position: 'relative' }}>
                 <img
-                  src={profile.avatarUrl || getAvatar(profile.displayName)}
+                  src={getVerifiedAvatarUrl(profile)}
                   alt={profile.displayName}
                   style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #ffffff', boxShadow: '0 4px 6px rgba(0,0,0,0.08)' }}
                 />

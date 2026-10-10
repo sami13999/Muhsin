@@ -80,3 +80,46 @@ export function getVerifiedSocialUrl(creator: CreatorSocialMeta): string {
   }
   return `https://www.instagram.com/${handle}/`;
 }
+
+export function getVerifiedAvatarUrl(creator: { displayName?: string; primaryHandle?: string; avatarUrl?: string }): string {
+  const name = (creator.displayName || '').toLowerCase();
+  const handle = (creator.primaryHandle || '').toLowerCase().replace(/^@+/, '').trim();
+
+  // 1. Romaisa Khan (uses real cropped TikTok avatar with yellow glasses and denim jacket)
+  if (name.includes('romaisa') || handle.includes('romaisa')) {
+    return '/creators/romaisa-khan.png';
+  }
+  // 2. Shahveer Jafry
+  if (name.includes('shahveer') || handle.includes('shahveer')) {
+    return '/creators/shahveer-jafry.jpg';
+  }
+  // 3. Irfan Junejo
+  if (name.includes('junejo') || handle.includes('junejo')) {
+    return '/creators/irfan-junejo.jpg';
+  }
+  // 4. Arslan Naseer (CBA)
+  if (name.includes('arslan') || handle.includes('cba') || handle.includes('arsalan')) {
+    return '/creators/arslan-naseer.jpg';
+  }
+  // 5. Danyal Zafar
+  if (name.includes('danyal') || handle.includes('danyal')) {
+    return '/creators/danyal-zafar.jpg';
+  }
+  // 6. Areeka Haq
+  if (name.includes('areeka') || handle.includes('areeka')) {
+    return '/creators/areeka-haq.jpg';
+  }
+  // 7. Kanwal Aftab
+  if (name.includes('kanwal') || handle.includes('kanwal')) {
+    return '/creators/kanwal-aftab.jpg';
+  }
+  // 8. Mooroo
+  if (name.includes('mooroo') || handle.includes('mooroo')) {
+    return '/creators/mooroo.jpg';
+  }
+
+  if (creator.avatarUrl && !creator.avatarUrl.includes('images.unsplash.com')) {
+    return creator.avatarUrl;
+  }
+  return '/creators/romaisa-khan.png';
+}

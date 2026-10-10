@@ -361,7 +361,7 @@ export function createApp(config: AppConfig = {}): Hono {
         niche: 'Vlogs & Entertainment',
         iqScore: 97,
         verified: true,
-        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
+        avatarUrl: '/creators/shahveer-jafry.jpg',
         bio: 'Digital creator, family vlogger & Pakistani podcast host',
         canonicalUrl: 'https://www.youtube.com/@ShahveerJay',
         isLive: true
@@ -378,7 +378,7 @@ export function createApp(config: AppConfig = {}): Hono {
         niche: 'Cinematic & Lifestyle',
         iqScore: 96,
         verified: true,
-        avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80',
+        avatarUrl: '/creators/irfan-junejo.jpg',
         bio: 'Cinematic storytelling, lifestyle photography & honest tech vlogs',
         canonicalUrl: 'https://www.youtube.com/@IrfanJunejo',
         isLive: true
@@ -395,8 +395,8 @@ export function createApp(config: AppConfig = {}): Hono {
         niche: 'Entertainment & Comedy',
         iqScore: 95,
         verified: true,
-        avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&auto=format&fit=crop&q=80',
-        bio: 'Actress & TikTok star known for viral comedy skits & lifestyle',
+        avatarUrl: '/creators/romaisa-khan.png',
+        bio: 'Waiting for 10M 😊 | Actress & TikTok star known for viral comedy skits & lifestyle',
         canonicalUrl: 'https://www.tiktok.com/@romaisa.khan._',
         isLive: true
       },
@@ -412,7 +412,7 @@ export function createApp(config: AppConfig = {}): Hono {
         niche: 'Comedy & Parody',
         iqScore: 96,
         verified: true,
-        avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&auto=format&fit=crop&q=80',
+        avatarUrl: '/creators/arslan-naseer.jpg',
         bio: 'Comics By Arslan (CBA) creator, satirist, YouTuber & TV actor',
         canonicalUrl: 'https://www.youtube.com/@arsalancba',
         isLive: true
@@ -429,7 +429,7 @@ export function createApp(config: AppConfig = {}): Hono {
         niche: 'Music & Fashion',
         iqScore: 94,
         verified: true,
-        avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&auto=format&fit=crop&q=80',
+        avatarUrl: '/creators/danyal-zafar.jpg',
         bio: 'Musician, singer, indie songwriter & youth fashion icon',
         canonicalUrl: 'https://www.instagram.com/danyalzee/',
         isLive: true
@@ -446,7 +446,7 @@ export function createApp(config: AppConfig = {}): Hono {
         niche: 'Fashion & Beauty',
         iqScore: 98,
         verified: true,
-        avatarUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&auto=format&fit=crop&q=80',
+        avatarUrl: '/creators/areeka-haq.jpg',
         bio: 'Fashion, beauty, lip-sync & top trending Pakistani creator',
         canonicalUrl: 'https://www.tiktok.com/@areeka__haq',
         isLive: true
@@ -463,7 +463,7 @@ export function createApp(config: AppConfig = {}): Hono {
         niche: 'Lifestyle & Family',
         iqScore: 97,
         verified: true,
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+        avatarUrl: '/creators/kanwal-aftab.jpg',
         bio: 'Lifestyle influencer, TV host & family vlogger',
         canonicalUrl: 'https://www.tiktok.com/@kanwal.135',
         isLive: true
@@ -480,7 +480,7 @@ export function createApp(config: AppConfig = {}): Hono {
         niche: 'Music & Podcasts',
         iqScore: 95,
         verified: true,
-        avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&auto=format&fit=crop&q=80',
+        avatarUrl: '/creators/mooroo.jpg',
         bio: 'Taimoor Salahuddin (Mooroo) - Musician, filmmaker & top Pakistani podcaster',
         canonicalUrl: 'https://www.youtube.com/@mooroosicity',
         isLive: true
