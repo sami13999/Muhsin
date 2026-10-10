@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { getVerifiedSocialUrl } from '@/lib/social-links';
 
 interface Creator {
   creatorId: string;
@@ -18,6 +19,7 @@ interface Creator {
   tags?: string[];
   authScore?: number;
   verified?: boolean;
+  canonicalUrl?: string;
 }
 
 interface SearchResultsGridProps {
@@ -164,7 +166,7 @@ export default function SearchResultsGrid({
                   )}
                 </div>
                 <a
-                  href={creator.platform === 'youtube' ? `https://www.youtube.com/@${creator.primaryHandle.replace(/^@/, '')}` : creator.platform === 'tiktok' ? `https://www.tiktok.com/@${creator.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${creator.primaryHandle.replace(/^@/, '')}/`}
+                  href={getVerifiedSocialUrl(creator)}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
@@ -263,7 +265,7 @@ export default function SearchResultsGrid({
                 Live Social Source:
               </span>
               <a
-                href={creator.platform === 'youtube' ? `https://www.youtube.com/@${creator.primaryHandle.replace(/^@/, '')}` : creator.platform === 'tiktok' ? `https://www.tiktok.com/@${creator.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${creator.primaryHandle.replace(/^@/, '')}/`}
+                href={getVerifiedSocialUrl(creator)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}

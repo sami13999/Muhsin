@@ -352,7 +352,7 @@ export function createApp(config: AppConfig = {}): Hono {
       {
         creatorId: 'cr-shahveer-01',
         displayName: 'Shahveer Jafry',
-        primaryHandle: '@shahveerjay',
+        primaryHandle: '@ShahveerJay',
         platform: 'youtube',
         followerCount: 3400000,
         engagementRate: 9.4,
@@ -363,13 +363,13 @@ export function createApp(config: AppConfig = {}): Hono {
         verified: true,
         avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
         bio: 'Digital creator, family vlogger & Pakistani podcast host',
-        canonicalUrl: 'https://www.youtube.com/@shahveerjay',
+        canonicalUrl: 'https://www.youtube.com/@ShahveerJay',
         isLive: true
       },
       {
         creatorId: 'cr-junejo-02',
         displayName: 'Irfan Junejo',
-        primaryHandle: '@irfanjunejo',
+        primaryHandle: '@IrfanJunejo',
         platform: 'youtube',
         followerCount: 1600000,
         engagementRate: 8.2,
@@ -380,15 +380,15 @@ export function createApp(config: AppConfig = {}): Hono {
         verified: true,
         avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80',
         bio: 'Cinematic storytelling, lifestyle photography & honest tech vlogs',
-        canonicalUrl: 'https://www.youtube.com/@irfanjunejo',
+        canonicalUrl: 'https://www.youtube.com/@IrfanJunejo',
         isLive: true
       },
       {
         creatorId: 'cr-romaisa-03',
         displayName: 'Romaisa Khan',
-        primaryHandle: '@romaisakhan.official',
+        primaryHandle: '@romaisa.khan._',
         platform: 'tiktok',
-        followerCount: 2100000,
+        followerCount: 8500000,
         engagementRate: 11.4,
         _rankingScore: 96,
         city: 'Karachi',
@@ -397,13 +397,13 @@ export function createApp(config: AppConfig = {}): Hono {
         verified: true,
         avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&auto=format&fit=crop&q=80',
         bio: 'Actress & TikTok star known for viral comedy skits & lifestyle',
-        canonicalUrl: 'https://www.tiktok.com/@romaisakhan.official',
+        canonicalUrl: 'https://www.tiktok.com/@romaisa.khan._',
         isLive: true
       },
       {
         creatorId: 'cr-arslan-04',
         displayName: 'Arslan Naseer (CBA)',
-        primaryHandle: '@cba_arslan',
+        primaryHandle: '@arsalancba',
         platform: 'youtube',
         followerCount: 1250000,
         engagementRate: 8.9,
@@ -414,7 +414,7 @@ export function createApp(config: AppConfig = {}): Hono {
         verified: true,
         avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&auto=format&fit=crop&q=80',
         bio: 'Comics By Arslan (CBA) creator, satirist, YouTuber & TV actor',
-        canonicalUrl: 'https://www.youtube.com/@cba_arslan',
+        canonicalUrl: 'https://www.youtube.com/@arsalancba',
         isLive: true
       },
       {
@@ -454,7 +454,7 @@ export function createApp(config: AppConfig = {}): Hono {
       {
         creatorId: 'cr-kanwal-07',
         displayName: 'Kanwal Aftab',
-        primaryHandle: '@kanwalaftabofficial',
+        primaryHandle: '@kanwal.135',
         platform: 'tiktok',
         followerCount: 18500000,
         engagementRate: 10.8,
@@ -465,7 +465,7 @@ export function createApp(config: AppConfig = {}): Hono {
         verified: true,
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
         bio: 'Lifestyle influencer, TV host & family vlogger',
-        canonicalUrl: 'https://www.tiktok.com/@kanwalaftabofficial',
+        canonicalUrl: 'https://www.tiktok.com/@kanwal.135',
         isLive: true
       },
       {

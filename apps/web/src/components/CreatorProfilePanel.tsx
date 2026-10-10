@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/lib/toast';
 import { api } from '@/lib/api';
+import { getVerifiedSocialUrl } from '@/lib/social-links';
 
 export interface CreatorProfileData {
   creatorId: string;
@@ -17,6 +18,7 @@ export interface CreatorProfileData {
   verified?: boolean;
   avatarUrl?: string;
   bio?: string;
+  canonicalUrl?: string;
 }
 
 interface CreatorProfilePanelProps {
@@ -326,7 +328,7 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose, onDed
                   </span>
                   <span>•</span>
                   <a
-                    href={profile.platform === 'youtube' ? `https://www.youtube.com/@${profile.primaryHandle.replace(/^@/, '')}` : profile.platform === 'tiktok' ? `https://www.tiktok.com/@${profile.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${profile.primaryHandle.replace(/^@/, '')}/`}
+                    href={getVerifiedSocialUrl(profile)}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ color: '#4f46e5', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}
@@ -484,12 +486,12 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose, onDed
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{profile.displayName}</div>
                         <div style={{ fontSize: '11px', color: '#64748b' }}>
-                          {profile.platform === 'youtube' ? `https://www.youtube.com/@${profile.primaryHandle.replace(/^@/, '')}` : profile.platform === 'tiktok' ? `https://www.tiktok.com/@${profile.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${profile.primaryHandle.replace(/^@/, '')}/`}
+                          {getVerifiedSocialUrl(profile)}
                         </div>
                       </div>
                     </div>
                     <a
-                      href={profile.platform === 'youtube' ? `https://www.youtube.com/@${profile.primaryHandle.replace(/^@/, '')}` : profile.platform === 'tiktok' ? `https://www.tiktok.com/@${profile.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${profile.primaryHandle.replace(/^@/, '')}/`}
+                      href={getVerifiedSocialUrl(profile)}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{

@@ -5,6 +5,8 @@ node_modules/
 dist/
 .next/
 .turbo/
+out/
+*.tsbuildinfo
 
 # Environment files (NEVER commit)
 .env

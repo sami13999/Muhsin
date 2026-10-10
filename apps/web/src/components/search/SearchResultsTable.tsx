@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { getVerifiedSocialUrl } from '@/lib/social-links';
 
 interface Creator {
   creatorId: string;
@@ -15,6 +16,7 @@ interface Creator {
   iqScore: number;
   avatarUrl?: string;
   bio?: string;
+  canonicalUrl?: string;
 }
 
 interface SearchResultsTableProps {
@@ -104,7 +106,7 @@ export default function SearchResultsTable({
                       <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '13px' }}>{c.displayName}</div>
                       <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <a
-                          href={c.platform === 'youtube' ? `https://www.youtube.com/@${c.primaryHandle.replace(/^@/, '')}` : c.platform === 'tiktok' ? `https://www.tiktok.com/@${c.primaryHandle.replace(/^@/, '')}` : `https://www.instagram.com/${c.primaryHandle.replace(/^@/, '')}/`}
+                          href={getVerifiedSocialUrl(c)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
