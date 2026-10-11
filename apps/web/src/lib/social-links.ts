@@ -126,9 +126,49 @@ export function getVerifiedSocialUrl(creator: CreatorSocialMeta): string {
     return 'https://www.instagram.com/haniaheheofficial/';
   }
 
-  // 20. Babar Azam (Instagram: @babarazam)
-  if (name.includes('babar') || handle.includes('babar')) {
-    return 'https://www.instagram.com/babarazam/';
+  // 20. Ayla Adnan (Instagram: @aylasworld) - Fashion & Bridal Lifestyle
+  if (name.includes('ayla') || handle.includes('ayla') || handle.includes('aylasworld')) {
+    return 'https://www.instagram.com/aylasworld/';
+  }
+
+  // 21. Mubeen (Instagram: @whoismubeen) - Lifestyle & Food
+  if (name.includes('mubeen') || handle.includes('whoismubeen')) {
+    return 'https://www.instagram.com/whoismubeen/';
+  }
+
+  // 22. Aliqa Shafqat (Instagram: @life_incurls) - Curly Hair & Lifestyle
+  if (name.includes('aliqa') || handle.includes('life_incurls')) {
+    return 'https://www.instagram.com/life_incurls/';
+  }
+
+  // 23. Ali In Karachi (Instagram: @ali_in_karachi) - Food Vlogs
+  if (handle.includes('ali_in_karachi') || name.includes('ali in karachi')) {
+    return 'https://www.instagram.com/ali_in_karachi/';
+  }
+
+  // 24. Mas Tech (YouTube: @mastechpk) - Tech Reviews
+  if (name.includes('mas tech') || handle.includes('mastech')) {
+    return 'https://www.youtube.com/@mastechpk';
+  }
+
+  // 25. Hira Attique (Instagram: @hirableeh)
+  if (name.includes('hira attique') || handle.includes('hirableeh')) {
+    return 'https://www.instagram.com/hirableeh/';
+  }
+
+  // 26. Hemayal Attique (Instagram: @hemayal)
+  if (name.includes('hemayal') || handle.includes('hemayal')) {
+    return 'https://www.instagram.com/hemayal/';
+  }
+
+  // 27. Waliya Najib (Instagram: @waliyanajib)
+  if (name.includes('waliya') || handle.includes('waliyanajib')) {
+    return 'https://www.instagram.com/waliyanajib/';
+  }
+
+  // 28. Bekaar Films (YouTube: @bekaarfilms)
+  if (name.includes('bekaar') || handle.includes('bekaarfilms')) {
+    return 'https://www.youtube.com/@bekaarfilms';
   }
 
   // 21. Laraib Rahim (Instagram: @laraib_rahim)
@@ -261,9 +301,41 @@ export function getVerifiedAvatarUrl(creator: { displayName?: string; primaryHan
   if (name.includes('hania') || handle.includes('hania')) {
     return '/creators/hania-aamir.jpg';
   }
-  // 20. Babar Azam
-  if (name.includes('babar') || handle.includes('babar')) {
-    return '/creators/babar-azam.jpg';
+  // 20. Ayla Adnan
+  if (name.includes('ayla') || handle.includes('ayla') || handle.includes('aylasworld')) {
+    return '/creators/ayla-adnan.jpg';
+  }
+  // 21. Mubeen
+  if (name.includes('mubeen') || handle.includes('whoismubeen')) {
+    return '/creators/whois-mubeen.jpg';
+  }
+  // 22. Aliqa Shafqat
+  if (name.includes('aliqa') || handle.includes('life_incurls')) {
+    return '/creators/life-incurls.jpg';
+  }
+  // 23. Ali In Karachi
+  if (handle.includes('ali_in_karachi') || name.includes('ali in karachi')) {
+    return '/creators/ali-in-karachi.jpg';
+  }
+  // 24. Mas Tech
+  if (name.includes('mas tech') || handle.includes('mastech')) {
+    return '/creators/mas-tech.jpg';
+  }
+  // 25. Hira Attique
+  if (name.includes('hira attique') || handle.includes('hirableeh')) {
+    return '/creators/hira-attique.jpg';
+  }
+  // 26. Hemayal Attique
+  if (name.includes('hemayal') || handle.includes('hemayal')) {
+    return '/creators/hemayal-attique.jpg';
+  }
+  // 27. Waliya Najib
+  if (name.includes('waliya') || handle.includes('waliyanajib')) {
+    return '/creators/waliya-najib.jpg';
+  }
+  // 28. Bekaar Films
+  if (name.includes('bekaar') || handle.includes('bekaarfilms')) {
+    return '/creators/bekaar-films.jpg';
   }
   // 21. Laraib Rahim
   if (name.includes('laraib') || handle.includes('laraib')) {
