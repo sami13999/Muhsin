@@ -7,4 +7,6 @@
 export { createTimelineWriterHandler } from './timeline-writer.js';
 export { createFeedbackProcessorHandler } from './feedback-processor.js';
 export { createBillingStateHandler } from './billing-state.js';
+export { createCreatorErasureHandler } from './creator-erasure.js';
+export { createDiscoveryJobHandler } from './discovery-worker.js';
 export { runCreditGrantJob, runReservationSweeper } from '../jobs/index.js';

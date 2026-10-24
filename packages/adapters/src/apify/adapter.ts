@@ -69,6 +69,13 @@ function recordSuccess() {
   circuit.status = 'closed';
 }
 
+export function _resetCircuitForTesting(): void {
+  circuit.failureCount = 0;
+  circuit.status = 'closed';
+  circuit.lastFailureAt = 0;
+  circuit.openedAt = 0;
+}
+
 function isCircuitOpen(): boolean {
   if (circuit.status === 'closed') return false;
   if (circuit.status === 'open') {
@@ -100,16 +107,23 @@ export class ApifyAdapter {
     options?: {
       timeoutSecs?: number;
       memoryMbytes?: number;
+      signal?: AbortSignal;
     },
   ): Promise<ApifyDatasetItem[]> {
     if (isCircuitOpen()) {
       throw new Error('Apify circuit breaker open');
     }
+    if (options?.signal?.aborted) {
+      const err = new Error('Apify operation aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
 
     try {
-      // Start actor run
+      // Start actor run (Apify API requires username~actor-name for named actors)
+      const normalizedActorId = actorId.replace('/', '~');
       const runRes = await fetch(
-        `https://api.apify.com/v2/acts/${actorId}/runs?token=${this.config.apiKey}`,
+        `https://api.apify.com/v2/acts/${normalizedActorId}/runs?token=${this.config.apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -118,6 +132,7 @@ export class ApifyAdapter {
             timeoutSecs: options?.timeoutSecs ?? 120,
             memoryMbytes: options?.memoryMbytes ?? 512,
           }),
+          signal: options?.signal,
         },
       );
 
@@ -126,14 +141,14 @@ export class ApifyAdapter {
         throw new Error(`Apify API error: ${runRes.status} ${body}`);
       }
 
-      const runData = await runRes.json() as { data: ApifyActorRun };
+      const runData = (await runRes.json()) as { data: ApifyActorRun };
       const runId = runData.data.id;
 
       // Poll for completion
-      const result = await this.waitForCompletion(runId);
+      const result = await this.waitForCompletion(runId, 180000, options?.signal);
 
       // Fetch dataset
-      const items = await this.fetchDataset(result.defaultDatasetId);
+      const items = await this.fetchDataset(result.defaultDatasetId, options?.signal);
 
       recordSuccess();
       return items;
@@ -146,14 +161,20 @@ export class ApifyAdapter {
   /**
    * Fetch dataset items from a completed run.
    */
-  async fetchDataset(datasetId: string): Promise<ApifyDatasetItem[]> {
+  async fetchDataset(datasetId: string, signal?: AbortSignal): Promise<ApifyDatasetItem[]> {
     if (isCircuitOpen()) {
       throw new Error('Apify circuit breaker open');
+    }
+    if (signal?.aborted) {
+      const err = new Error('Apify dataset fetch aborted');
+      err.name = 'AbortError';
+      throw err;
     }
 
     try {
       const res = await fetch(
         `https://api.apify.com/v2/datasets/${datasetId}/items?token=${this.config.apiKey}`,
+        { signal },
       );
 
       if (!res.ok) {
@@ -161,7 +182,7 @@ export class ApifyAdapter {
         throw new Error(`Apify API error: ${res.status} ${body}`);
       }
 
-      const items = await res.json() as ApifyDatasetItem[];
+      const items = (await res.json()) as ApifyDatasetItem[];
       recordSuccess();
       return items;
     } catch (err) {
@@ -204,20 +225,31 @@ export class ApifyAdapter {
 
   // ── Private Helpers ────────────────────────────────────────
 
-  private async waitForCompletion(runId: string, maxWaitMs = 180000): Promise<ApifyActorRun> {
+  private async waitForCompletion(
+    runId: string,
+    maxWaitMs = 180000,
+    signal?: AbortSignal,
+  ): Promise<ApifyActorRun> {
     const start = Date.now();
     const pollInterval = 2000;
 
     while (Date.now() - start < maxWaitMs) {
+      if (signal?.aborted) {
+        const err = new Error('Apify actor wait aborted');
+        err.name = 'AbortError';
+        throw err;
+      }
+
       const res = await fetch(
         `https://api.apify.com/v2/actor-runs/${runId}?token=${this.config.apiKey}`,
+        { signal },
       );
 
       if (!res.ok) {
         throw new Error(`Apify API error: ${res.status}`);
       }
 
-      const data = await res.json() as { data: ApifyActorRun };
+      const data = (await res.json()) as { data: ApifyActorRun };
       const run = data.data;
 
       if (run.status === 'SUCCEEDED') {
@@ -228,7 +260,21 @@ export class ApifyAdapter {
         throw new Error(`Actor run ${run.status}: ${runId}`);
       }
 
-      await new Promise((r) => setTimeout(r, pollInterval));
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(resolve, pollInterval);
+        if (signal) {
+          signal.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timeout);
+              const abortErr = new Error('Apify actor wait aborted');
+              abortErr.name = 'AbortError';
+              reject(abortErr);
+            },
+            { once: true },
+          );
+        }
+      });
     }
 
     throw new Error(`Actor run timed out after ${maxWaitMs}ms: ${runId}`);

@@ -21,7 +21,8 @@ export function createAnalyticsRoutes(analytics: AnalyticsService): Hono {
     const requestId = c.get('requestId');
     const period = c.req.query('period') ?? 'current_month';
 
-    const data = await analytics.getWorkspaceAnalytics(tenancy.workspaceId, period);
+    const svc = c.get('db') ? analytics.withDb(c.get('db')) : analytics;
+    const data = await svc.getWorkspaceAnalytics(tenancy.workspaceId, period);
 
     return c.json({
       data: { analytics: data },

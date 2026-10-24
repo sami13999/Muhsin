@@ -78,10 +78,22 @@ export const creator = pgTable(
     index('idx_creator_pii_erased')
       .on(table.piiErasedAt)
       .where(sql`${table.piiErasedAt} IS NOT NULL`),
+    // Re-indexing queue (PATCH-009, ADR-027, intended index from V002)
+    index('idx_creator_index_pending')
+      .on(table.indexPending)
+      .where(sql`${table.indexPending} = true`),
   ],
 );
 
 // ── gcp.profile ──────────────────────────────────────────────
+
+export interface AudienceDemographics {
+  age?: Record<string, number>;
+  gender?: Record<string, number>;
+  cities?: Record<string, number>;
+  countries?: Record<string, number>;
+  [key: string]: unknown;
+}
 
 export const profile = pgTable(
   'profile',
@@ -128,6 +140,9 @@ export const profile = pgTable(
     // Platform-specific structured payload
     platformMetrics: jsonb('platform_metrics'),
 
+    // Audience demographics (V014, structured age/gender/geo distributions)
+    audienceDemographics: jsonb('audience_demographics').$type<AudienceDemographics>(),
+
     // Archive reference
     scrapedPayloadRef: text('scraped_payload_ref'),
 
@@ -153,6 +168,10 @@ export const profile = pgTable(
     index('idx_profile_yt_ratio')
       .on(table.ytSubscriberToViewRatio)
       .where(sql`${table.ytSubscriberToViewRatio} IS NOT NULL`),
+    // Demographic queries (V014)
+    index('idx_profile_audience_demographics')
+      .using('gin', table.audienceDemographics)
+      .where(sql`${table.audienceDemographics} IS NOT NULL`),
   ],
 );
 
@@ -254,5 +273,40 @@ export const inflightUrlLock = pgTable(
   },
   (table) => [
     index('idx_inflight_url_expires').on(table.expiresAt),
+  ],
+);
+
+// ── gcp.rising_score_cache (V014) ────────────────────────────
+
+export const risingScoreCache = pgTable(
+  'rising_score_cache',
+  {
+    creatorId: uuid('creator_id').primaryKey(),
+    score: numeric('score', { precision: 5, scale: 4 }).notNull().default('0'),
+    inputs: jsonb('inputs').notNull().default({}),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('idx_rising_score_expires').on(table.expiresAt),
+  ],
+);
+
+// ── gcp.trending_score_cache (V014) ──────────────────────────
+
+export type TrendDirection = 'accelerating' | 'steady' | 'decelerating';
+
+export const trendingScoreCache = pgTable(
+  'trending_score_cache',
+  {
+    creatorId: uuid('creator_id').primaryKey(),
+    score: numeric('score', { precision: 5, scale: 4 }).notNull().default('0'),
+    inputs: jsonb('inputs').notNull().default({}),
+    trendDirection: text('trend_direction').$type<TrendDirection>().notNull().default('steady'),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('idx_trending_score_expires').on(table.expiresAt),
   ],
 );

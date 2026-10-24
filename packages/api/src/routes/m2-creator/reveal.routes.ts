@@ -61,9 +61,10 @@ export function createRevealRoutes(db: Database): Hono {
     }
 
     const workspaceId = tenancy.workspaceId;
+    const clientDb = c.get('db') ?? db;
 
     // 1. Fetch creator to check minor_signal
-    const [creatorRow] = await db
+    const [creatorRow] = await clientDb
       .select({ minorSignal: creator.minorSignal })
       .from(creator)
       .where(eq(creator.creatorId, creatorId))
@@ -91,7 +92,7 @@ export function createRevealRoutes(db: Database): Hono {
     }
 
     // 2. Check if already revealed for this workspace
-    const [existingReveal] = await db
+    const [existingReveal] = await clientDb
       .select()
       .from(reveal)
       .where(
@@ -104,7 +105,7 @@ export function createRevealRoutes(db: Database): Hono {
 
     if (existingReveal) {
       // Already revealed — return contact without charge
-      const contacts = await db
+      const contacts = await clientDb
         .select()
         .from(contactRecord)
         .where(
@@ -118,7 +119,7 @@ export function createRevealRoutes(db: Database): Hono {
         data: {
           revealed: true,
           freeReveal: true,
-          contact: contacts.reduce((acc, row) => {
+          contact: contacts.reduce((acc: Record<string, string | null>, row: { contactType: string; value: string | null }) => {
             acc[row.contactType] = row.value;
             return acc;
           }, {} as Record<string, string | null>),
@@ -128,7 +129,7 @@ export function createRevealRoutes(db: Database): Hono {
     }
 
     // 3. Check credit balance using repository with row-level lock (ADR-026)
-    const { balance: currentBalance } = await creditRepository.getBalance(db, workspaceId);
+    const { balance: currentBalance } = await creditRepository.getBalance(clientDb, workspaceId);
 
     if (currentBalance < REVEAL_CREDIT_COST) {
       const shortfall = REVEAL_CREDIT_COST - currentBalance;
@@ -154,7 +155,7 @@ export function createRevealRoutes(db: Database): Hono {
     let revealed = false;
 
     try {
-      await db.transaction(async (tx) => {
+      await (clientDb as any).transaction(async (tx: any) => {
         const txn = tx as unknown as TransactionClient;
         // Reserve credits via repository with SELECT FOR UPDATE (ADR-026)
         const reserveResult = await creditRepository.reserveCredits(
@@ -218,7 +219,7 @@ export function createRevealRoutes(db: Database): Hono {
     }
 
     // 5. Fetch contact records
-    const contacts = await db
+    const contacts = await clientDb
       .select()
       .from(contactRecord)
       .where(
@@ -240,7 +241,7 @@ export function createRevealRoutes(db: Database): Hono {
         revealed: true,
         freeReveal: false,
         creditsUsed: Number(REVEAL_CREDIT_COST),
-        contact: contacts.reduce((acc, row) => {
+        contact: contacts.reduce((acc: Record<string, string | null>, row: { contactType: string; value: string | null }) => {
           acc[row.contactType] = row.value;
           return acc;
         }, {} as Record<string, string | null>),

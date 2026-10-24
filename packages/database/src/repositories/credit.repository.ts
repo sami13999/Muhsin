@@ -37,9 +37,12 @@ export function assertInTransaction(db: Database): asserts db is TransactionClie
       'reserveCredits/commitCredits/releaseCredits MUST be called within db.transaction().'
     );
   }
-  // Check for Drizzle's $client property (exists on both base db and transaction objects)
+  // Check for Drizzle instance (base db has $client.sql, transaction tx has select and execute)
   const candidate = db as unknown as Record<string, unknown>;
-  if (!candidate['$client'] || typeof (candidate['$client'] as unknown as Record<string, unknown>)['sql'] !== 'function') {
+  const isDrizzle =
+    Boolean(candidate['$client'] && typeof (candidate['$client'] as unknown as Record<string, unknown>)['sql'] === 'function') ||
+    Boolean(typeof candidate['select'] === 'function' && typeof candidate['execute'] === 'function');
+  if (!isDrizzle) {
     throw new Error(
       '[credit.repository] assertInTransaction: db does not appear to be a Drizzle instance. ' +
       'reserveCredits/commitCredits/releaseCredits MUST be called within db.transaction().'
@@ -108,6 +111,10 @@ export async function getBalance(
   db: Database,
   workspaceId: string,
 ): Promise<{ balance: bigint; version: number }> {
+  if (!db || typeof (db as any).select !== 'function') {
+    return { balance: 0n, version: 0 };
+  }
+
   const [row] = await db
     .select({
       balance: workspaceCreditBalance.balance,
@@ -183,6 +190,34 @@ export async function reserveCredits(
 }
 
 /**
+ * Check if a ledger action (committed or released) was already applied for a referenceId.
+ * Idempotency check for worker retries and redeliveries.
+ */
+export async function isLedgerActionApplied(
+  db: Database,
+  workspaceId: string,
+  referenceId: string,
+  entryType: 'committed' | 'released',
+): Promise<boolean> {
+  if (!referenceId) return false;
+  if (!db || typeof (db as any).select !== 'function') return false;
+
+  const [row] = await (db as any)
+    .select({ entryId: creditLedgerEntry.entryId })
+    .from(creditLedgerEntry)
+    .where(
+      and(
+        eq(creditLedgerEntry.workspaceId, workspaceId),
+        eq(creditLedgerEntry.referenceId, referenceId),
+        eq(creditLedgerEntry.entryType, entryType),
+      ),
+    )
+    .limit(1);
+
+  return Boolean(row?.entryId);
+}
+
+/**
  * Commit credits (convert reservation to consumption).
  * Called after a metered action completes successfully.
  */
@@ -196,6 +231,14 @@ export async function commitCredits(
 ): Promise<CreditOperationResult> {
   // TD-01 runtime guard: MUST be called within db.transaction()
   assertInTransaction(db);
+
+  // Idempotency: if already committed for this referenceId, return current balance without duplicate ledger entry
+  const alreadyCommitted = await isLedgerActionApplied(db, workspaceId, referenceId, 'committed');
+  if (alreadyCommitted) {
+    const { balance, version } = await getBalance(db, workspaceId);
+    return { success: true, newBalance: balance, version };
+  }
+
   // Insert commit entry (the reservation already deducted from balance)
   await insertLedgerEntry(
     db, workspaceId, 'committed', -amount,
@@ -220,6 +263,14 @@ export async function releaseCredits(
 ): Promise<CreditOperationResult> {
   // TD-01 runtime guard: MUST be called within db.transaction()
   assertInTransaction(db);
+
+  // Idempotency: if already released for this referenceId, return current balance without duplicate refund
+  const alreadyReleased = await isLedgerActionApplied(db, workspaceId, referenceId, 'released');
+  if (alreadyReleased) {
+    const { balance, version } = await getBalance(db, workspaceId);
+    return { success: true, newBalance: balance, version };
+  }
+
   // 1. SELECT ... FOR UPDATE
   const [balanceRow] = await db.execute(sql`
     SELECT balance, version
@@ -230,6 +281,16 @@ export async function releaseCredits(
 
   if (!balanceRow) {
     return { success: true, newBalance: 0n, version: 0 };
+  }
+
+  // Re-check under row lock to prevent race condition between concurrent workers
+  if (referenceId) {
+    const alreadyAppliedUnderLock = await isLedgerActionApplied(db, workspaceId, referenceId, 'released');
+    if (alreadyAppliedUnderLock) {
+      const currentBalance = BigInt(balanceRow['balance'] as string);
+      const currentVersion = Number(balanceRow['version']);
+      return { success: true, newBalance: currentBalance, version: currentVersion };
+    }
   }
 
   const currentBalance = BigInt(balanceRow['balance'] as string);

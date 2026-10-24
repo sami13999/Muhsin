@@ -39,9 +39,8 @@ COMMENT ON TABLE gcp.rising_score_cache IS
   'Score is computed from enrichment snapshot history. '
   'TTL: 1 hour. Can be disabled via RISING_SCORE_ENABLED=false.';
 
-CREATE INDEX idx_rising_score_expires
-  ON gcp.rising_score_cache (expires_at)
-  WHERE expires_at > NOW();
+CREATE INDEX IF NOT EXISTS idx_rising_score_expires
+  ON gcp.rising_score_cache (expires_at);
 
 -- ── Add trending_score cache table (optional optimization) ───
 CREATE TABLE IF NOT EXISTS gcp.trending_score_cache (
@@ -59,6 +58,5 @@ COMMENT ON TABLE gcp.trending_score_cache IS
   'Score measures short-term momentum (acceleration + recent growth). '
   'TTL: 30 minutes. Can be disabled via TRENDING_SORT_ENABLED=false.';
 
-CREATE INDEX idx_trending_score_expires
-  ON gcp.trending_score_cache (expires_at)
-  WHERE expires_at > NOW();
+CREATE INDEX IF NOT EXISTS idx_trending_score_expires
+  ON gcp.trending_score_cache (expires_at);

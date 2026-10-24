@@ -12,12 +12,14 @@ import { findById, type CreatorWithRelations } from '../repositories/creator.rep
  * Fields match adapter's configureIndex() filterable/sortable/searchable attributes.
  */
 export interface CreatorIndexDocument {
-  id: string;
+  creatorId: string;
+  id: string; // Kept for backwards compatibility
   // Identity
   displayName: string;
   primaryHandle: string;
   handleVariants: string[];
   platform: string;
+  canonicalUrl: string;
   location: string | null;
   languages: string[];
   bio: string | null;
@@ -26,6 +28,7 @@ export interface CreatorIndexDocument {
   followerCount: number;
   engagementRate: number | null;
   postCount: number | null;
+  lastPostAt: string | null;
 
   // LLM-derived attributes (populated by M6 at ingestion, stored in GCP)
   primaryNiche: string;
@@ -37,6 +40,7 @@ export interface CreatorIndexDocument {
   audienceGccShare: number | null;
   audienceDiasporaShare: number | null;
   languageMix: string[] | null;
+  summary: string | null;
 
   // Demographics (Problem 3)
   audienceFemalePercent: number | null;
@@ -50,10 +54,12 @@ export interface CreatorIndexDocument {
 
   // Completeness
   completenessTier: 'rich' | 'standard' | 'sparse' | 'minimal';
+  enrichmentSource: string;
 
   // Freshness
   lastEnrichedAt: string | null;
   lastRefreshedAt: string | null;
+  indexProjectionVersion: number;
   createdAt: string;
 }
 
@@ -61,7 +67,7 @@ export interface CreatorIndexDocument {
  * Map a creator with relations to the Meilisearch document schema.
  * Fields match adapter's configureIndex() filterable/sortable/searchable attributes.
  */
-function mapToSearchDocument(creatorData: CreatorWithRelations): CreatorIndexDocument {
+export function buildCreatorIndexDocument(creatorData: CreatorWithRelations): CreatorIndexDocument {
   const { creator: c, profiles, enrichmentSnapshots, nicheClassifications } = creatorData;
 
   // Primary profile = highest follower count
@@ -76,6 +82,7 @@ function mapToSearchDocument(creatorData: CreatorWithRelations): CreatorIndexDoc
   const authenticity = snapshotMap.get('authenticity');
   const quality = snapshotMap.get('quality');
   const audience = snapshotMap.get('audience_estimate');
+  const summarySnapshot = snapshotMap.get('summary');
 
   // Current niche classification
   const niche = nicheClassifications[0] ?? null;
@@ -89,20 +96,26 @@ function mapToSearchDocument(creatorData: CreatorWithRelations): CreatorIndexDoc
   // Parse audience estimates from verdict
   const audVerdict = audience?.verdict as Record<string, unknown> | undefined;
 
-  // Parse demographics from profile platformMetrics JSONB (gcp.profile.platform_metrics)
+  // Parse demographics from profile audienceDemographics or fallback to platformMetrics JSONB
   const platformMetrics = primaryProfile?.platformMetrics as Record<string, unknown> | undefined;
-  const demographics = platformMetrics?.['audience_demographics'] as Record<string, unknown> | undefined;
+  const demographics = (primaryProfile?.audienceDemographics ?? platformMetrics?.['audience_demographics']) as Record<string, unknown> | undefined;
   const genderData = demographics?.['gender'] as Record<string, number> | undefined;
   const ageData = demographics?.['age'] as Record<string, number> | undefined;
   const cityData = demographics?.['cities'] as Record<string, number> | undefined;
   const countryData = demographics?.['countries'] as Record<string, number> | undefined;
 
+  // Parse summary verdict
+  const summaryVerdict = summarySnapshot?.verdict as Record<string, unknown> | undefined;
+  const summaryText = (summaryVerdict?.['summary'] as string | undefined) ?? null;
+
   return {
+    creatorId: c.creatorId,
     id: c.creatorId,
     displayName: c.displayName ?? '',
     primaryHandle: c.primaryHandle ?? '',
     handleVariants: primaryProfile?.handleVariants ?? [],
     platform: primaryProfile?.platform ?? 'unknown',
+    canonicalUrl: primaryProfile?.canonicalUrl ?? '',
     location: null, // Not in GCP schema yet
     languages: [], // Not in GCP schema yet
     bio: null, // Not in GCP schema yet
@@ -110,6 +123,7 @@ function mapToSearchDocument(creatorData: CreatorWithRelations): CreatorIndexDoc
     followerCount: Number(primaryProfile?.followerCount ?? 0),
     engagementRate: primaryProfile?.engagementRate ? Number(primaryProfile.engagementRate) : null,
     postCount: null, // Not in GCP schema yet
+    lastPostAt: primaryProfile?.lastPostAt ? primaryProfile.lastPostAt.toISOString() : null,
 
     primaryNiche: niche?.primaryNiche ?? 'unknown',
     secondaryNiches: niche?.secondaryNiches ?? [],
@@ -120,6 +134,7 @@ function mapToSearchDocument(creatorData: CreatorWithRelations): CreatorIndexDoc
     audienceGccShare: audVerdict?.['gcc_share'] != null ? Number(audVerdict['gcc_share']) : null,
     audienceDiasporaShare: audVerdict?.['diaspora_share'] != null ? Number(audVerdict['diaspora_share']) : null,
     languageMix: audVerdict?.['language_mix'] != null ? (audVerdict['language_mix'] as string[]) : null,
+    summary: summaryText,
 
     // Demographics (Problem 3)
     audienceFemalePercent: genderData?.['female'] != null ? Number(genderData['female']) * 100 : null,
@@ -132,12 +147,16 @@ function mapToSearchDocument(creatorData: CreatorWithRelations): CreatorIndexDoc
     risingScore: null,
 
     completenessTier: primaryProfile?.payloadCompletenessTier ?? 'minimal',
+    enrichmentSource: primaryProfile?.enrichmentSource ?? 'unknown',
 
     lastEnrichedAt: primaryProfile?.enrichedAt?.toISOString() ?? null,
     lastRefreshedAt: primaryProfile?.updatedAt?.toISOString() ?? null,
+    indexProjectionVersion: primaryProfile?.indexProjectionVersion ?? 1,
     createdAt: c.createdAt.toISOString(),
   };
 }
+
+export const mapToSearchDocument = buildCreatorIndexDocument;
 
 /**
  * Project a single creator to the Meilisearch document schema.
@@ -159,8 +178,12 @@ export async function projectCreatorToIndex(
     return { success: false, reason: 'Creator not found' };
   }
 
-  // 2. Skip GDPR-erased creators
-  if (creatorData.creator.piiErasedAt) {
+  // 2. Skip GDPR-erased creators (prevent re-indexing during retries, re-projections, or backfills)
+  if (
+    creatorData.creator.piiErasedAt != null ||
+    creatorData.creator.displayName === '[ERASED]' ||
+    creatorData.creator.primaryHandle === '[ERASED]'
+  ) {
     return { success: false, reason: 'Creator is GDPR-erased' };
   }
 
@@ -178,6 +201,39 @@ export async function projectCreatorToIndex(
   }
 
   return { success: true, documentId: creatorId };
+}
+
+/**
+ * Delete a creator document from the Meilisearch index (GDPR erasure sync / Step 2B.2).
+ * Uses canonical creatorId.
+ *
+ * @param creatorId - Canonical UUID of the creator to delete
+ * @param meilisearch - Meilisearch adapter or client with deleteDocument
+ * @returns { success: true, documentId } or { success: false, reason }
+ */
+export async function deleteCreatorFromIndex(
+  creatorId: string,
+  meilisearch: {
+    deleteDocument: (
+      creatorId: string,
+    ) => Promise<{ status: string; error?: string; reason?: string }>;
+  },
+): Promise<{ success: true; documentId: string } | { success: false; reason: string }> {
+  if (!creatorId || typeof creatorId !== 'string' || creatorId.trim() === '') {
+    return { success: false, reason: 'Creator ID missing or invalid' };
+  }
+
+  const result = await meilisearch.deleteDocument(creatorId);
+
+  if (result.status === 'success') {
+    return { success: true, documentId: creatorId };
+  }
+
+  if (result.status === 'deletion_deferred') {
+    return { success: false, reason: result.reason ?? 'deletion_deferred' };
+  }
+
+  return { success: false, reason: result.error ?? 'Unknown deletion error' };
 }
 
 /**

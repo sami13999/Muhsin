@@ -413,3 +413,33 @@ export const staffUser = pgTable(
     index('idx_staff_user_department').on(table.department),
   ],
 );
+
+// ── wp.discovery_job (Doc 19 Part H, DOC-018) ────────────────
+export const discoveryJob = pgTable(
+  'discovery_job',
+  {
+    jobId: uuid('job_id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id').notNull()
+      .references(() => workspace.workspaceId, { onDelete: 'cascade' }),
+    requestedBy: uuid('requested_by'),
+    query: jsonb('query').notNull(),
+    status: text('status').notNull().default('queued'),
+    resultCount: integer('result_count').notNull().default(0),
+    results: jsonb('results').default(sql`'[]'::jsonb`),
+    pipelineStages: jsonb('pipeline_stages'),
+    executionStats: jsonb('execution_stats'),
+    error: jsonb('error'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(3),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_discovery_job_workspace').on(table.workspaceId, table.createdAt),
+    index('idx_discovery_job_status').on(table.status, table.createdAt),
+  ],
+);
+

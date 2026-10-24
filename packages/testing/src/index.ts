@@ -230,4 +230,7 @@ export {
   cleanupTestDatabase,
   stopTestDatabase,
   executeRaw,
+  withTestConnection,
+  executeInWorkspaceTransaction,
+  validateDisposableDatabase,
 } from './integration.js';

@@ -28,6 +28,9 @@ const EVENT_QUEUE_MAP: Record<string, string> = {
   'creator.scored': 'q-rescore-low',
   'creator.refresh_completed': 'q-rescore-low',
 
+  // Regulatory / Erasure (ADR-031)
+  'creator.erased': 'q-erasure',
+
   // Events (outbox relay)
   'workspace.created': 'q-outbox-relay',
   'workspace.member_invited': 'q-outbox-relay',
@@ -86,13 +89,21 @@ export class SQSPublisher implements QueuePublisher {
     accessKeyId: string;
     secretAccessKey: string;
     queueUrls: Record<string, string>;
+    endpoint?: string;
   }) {
+    const endpoint =
+      config.endpoint ||
+      process.env['AWS_ENDPOINT_URL'] ||
+      process.env['AWS_ENDPOINT_URL_SQS'] ||
+      process.env['LOCALSTACK_ENDPOINT'];
+
     this.client = new SQSClient({
       region: config.region,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
+      ...(endpoint ? { endpoint } : {}),
     });
 
     this.queueUrls = new Map(Object.entries(config.queueUrls));

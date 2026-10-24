@@ -66,10 +66,14 @@ export function createBillingWebhookRoutes(
 
     // 5. Process event based on type
     try {
+      const workspaceId = extractWorkspaceId(event);
       await db.transaction(async (tx) => {
+        if (workspaceId) {
+          await tx.execute(sql`SELECT set_config('app.current_workspace_id', ${workspaceId}, true)`);
+        }
         // Store normalized event
         await tx.insert(subscriptionEvent).values({
-          workspaceId: extractWorkspaceId(event),
+          workspaceId,
           subscriptionId: getSubscriptionId(event),
           eventType: event.type,
           status: getStatus(event),

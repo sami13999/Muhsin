@@ -24,6 +24,23 @@ export interface APIError {
   request_id?: string;
 }
 
+export class DiscoveryJobTimeoutError extends Error {
+  public readonly jobId: string;
+  public readonly lastStatus: 'queued' | 'running';
+  public readonly elapsedMs: number;
+
+  constructor(jobId: string, lastStatus: 'queued' | 'running', elapsedMs: number) {
+    super(
+      `Live discovery job ${jobId} is still processing in the background (elapsed: ${Math.round(elapsedMs / 1000)}s). ` +
+      `The job did NOT fail. You can resume checking status with pollDiscoveryJob("${jobId}").`
+    );
+    this.name = 'DiscoveryJobTimeoutError';
+    this.jobId = jobId;
+    this.lastStatus = lastStatus;
+    this.elapsedMs = elapsedMs;
+  }
+}
+
 export interface TenancyContext {
   userId: string;
   workspaceId: string;
@@ -207,39 +224,129 @@ class APIClient {
     }>('POST', '/api/v1/creators/search/nl', { query });
   }
 
-  async searchCreatorsLive(query: string, options?: { platform?: string; niche?: string; location?: string; round?: number; excludeHandles?: string[] }) {
+  async submitDiscoveryJob(query: string, options?: { platform?: string; niche?: string; location?: string }) {
     return this.request<{
-      data: Array<{
-        creatorId: string;
-        displayName: string;
-        primaryHandle: string;
-        platform: string;
-        followerCount: number;
-        engagementRate: number;
-        _rankingScore: number;
-        city?: string;
-        niche?: string;
-        iqScore?: number;
-        verified?: boolean;
-        isLive?: boolean;
-      }>;
-      total: number;
-      pipelineStages?: {
-        aiQueryExpansion: string[];
-        serperQueriesExecuted: number;
-        duplicatesFiltered: number;
-        apifyUrlsScraped: number;
-        creatorsPersistedDb: number;
-        mushinRankingApplied: boolean;
-      };
-      executionStats?: {
-        scrapedEndpoints: string[];
-        latencyMs: number;
-        creditsDeducted: number;
-        freshness: string;
+      data: {
+        job_id: string;
+        status: 'queued' | 'running' | 'completed' | 'failed';
+        estimated_duration_seconds: number;
+        credits_reserved: number;
+        created_at: string;
       };
       meta: { request_id: string; timestamp: string };
     }>('POST', '/api/v1/creators/search/live', { query, ...options });
+  }
+
+  async getDiscoveryJob(jobId: string) {
+    return this.request<{
+      data: {
+        job_id: string;
+        status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+        result_count: number;
+        results: any[];
+        pipeline_stages?: any;
+        execution_stats?: any;
+        error?: any;
+        started_at: string | null;
+        completed_at: string | null;
+        created_at: string;
+      };
+      meta: { request_id: string; timestamp: string };
+    }>('GET', `/api/v1/creators/search/live/jobs/${jobId}`);
+  }
+
+  async pollDiscoveryJob(
+    jobId: string,
+    options?: {
+      timeoutMs?: number;
+      initialIntervalMs?: number;
+      maxIntervalMs?: number;
+      backoffFactor?: number;
+    },
+  ) {
+    const startTime = Date.now();
+    const maxWaitMs = options?.timeoutMs ?? 240_000; // 240s gives headroom above Apify 120-180s processing envelope
+    let currentIntervalMs = options?.initialIntervalMs ?? 2_000;
+    const maxIntervalMs = options?.maxIntervalMs ?? 5_000;
+    const backoffFactor = options?.backoffFactor ?? 1.3;
+    let lastStatus: 'queued' | 'running' = 'queued';
+
+    while (Date.now() - startTime < maxWaitMs) {
+      await new Promise((r) => setTimeout(r, currentIntervalMs));
+      currentIntervalMs = Math.min(maxIntervalMs, Math.round(currentIntervalMs * backoffFactor));
+
+      const jobStatus = await this.getDiscoveryJob(jobId);
+      const status = jobStatus.data.status;
+
+      if (status === 'completed') {
+        return {
+          data: jobStatus.data.results || [],
+          total: jobStatus.data.result_count || (jobStatus.data.results?.length ?? 0),
+          pipelineStages: jobStatus.data.pipeline_stages,
+          executionStats: jobStatus.data.execution_stats,
+          meta: jobStatus.meta,
+          status: 'completed' as const,
+          jobId,
+        };
+      }
+
+      if (status === 'failed' || status === 'cancelled') {
+        const errMessage = jobStatus.data.error?.message || `Live discovery job ${status}`;
+        const err = new Error(errMessage) as Error & { jobId: string; status: string };
+        err.jobId = jobId;
+        err.status = status;
+        throw err;
+      }
+
+      if (status === 'running') {
+        lastStatus = 'running';
+      }
+    }
+
+    // Timeout: server job did NOT fail, it is still running in background
+    throw new DiscoveryJobTimeoutError(jobId, lastStatus, Date.now() - startTime);
+  }
+
+  async resumeDiscoveryJob(
+    jobId: string,
+    options?: {
+      timeoutMs?: number;
+      initialIntervalMs?: number;
+      maxIntervalMs?: number;
+      backoffFactor?: number;
+    },
+  ) {
+    return this.pollDiscoveryJob(jobId, options);
+  }
+
+  async searchCreatorsLive(
+    query: string,
+    options?: {
+      platform?: string;
+      niche?: string;
+      location?: string;
+      round?: number;
+      excludeHandles?: string[];
+      timeoutMs?: number;
+    },
+  ) {
+    const submitRes = await this.request<any>('POST', '/api/v1/creators/search/live', { query, ...options });
+
+    // If API responded directly with an array of creator items (e.g. mock mode or direct)
+    if (submitRes && submitRes.data && Array.isArray(submitRes.data)) {
+      return {
+        ...submitRes,
+        isMock: true,
+      };
+    }
+
+    // Asynchronous job model: poll until terminal status
+    const jobId = submitRes?.data?.job_id;
+    if (jobId) {
+      return this.pollDiscoveryJob(jobId, { timeoutMs: options?.timeoutMs });
+    }
+
+    return submitRes;
   }
 
   async getTrendingCreators(options?: { platform?: string; niche?: string; limit?: number }) {

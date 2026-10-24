@@ -28,8 +28,10 @@ export function createRefreshRoutes(db: Database): Hono {
     const requestId = c.get('requestId');
     const creatorId = c.req.param('id');
 
+    const activeDb = (c.get('db' as never) as Database) ?? db;
+
     // Validate creator exists
-    const [creatorRow] = await db
+    const [creatorRow] = await activeDb
       .select({ creatorId: creator.creatorId })
       .from(creator)
       .where(eq(creator.creatorId, creatorId))
@@ -43,7 +45,7 @@ export function createRefreshRoutes(db: Database): Hono {
     }
 
     // Update enrichment status to pending
-    await db
+    await activeDb
       .update(profile)
       .set({
         enrichmentStatus: 'pending',

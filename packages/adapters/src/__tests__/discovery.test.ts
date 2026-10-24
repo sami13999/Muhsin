@@ -1,90 +1,259 @@
 /**
  * Discovery pipeline unit tests.
- * Tests Serper adapter, Apify adapter, and discovery orchestrator.
+ * Tests Serper adapter, Apify adapter, and discovery provider interfaces.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SerperAdapter, createSerperAdapter } from '../serper/adapter.js';
-import { ApifyAdapter, createApifyAdapter } from '../apify/adapter.js';
+import { ApifyAdapter, createApifyAdapter, _resetCircuitForTesting } from '../apify/adapter.js';
 
 describe('SerperAdapter', () => {
+  const originalFetch = globalThis.fetch;
   let adapter: SerperAdapter;
 
   beforeEach(() => {
-    adapter = createSerperAdapter({ apiKey: 'test-key' });
+    vi.restoreAllMocks();
+    adapter = createSerperAdapter({ apiKey: 'test-serper-key' });
   });
 
-  describe('Factory', () => {
-    it('should create adapter with config', () => {
-      expect(adapter).toBeInstanceOf(SerperAdapter);
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('formats Google SERP query correctly and parses organic results', async () => {
+    let capturedUrl = '';
+    let capturedHeaders: Record<string, string> = {};
+    let capturedBody: any = null;
+
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string, init: any) => {
+      capturedUrl = url;
+      capturedHeaders = init.headers;
+      capturedBody = JSON.parse(init.body);
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          searchParameters: { q: 'site:instagram.com travel pakistani', type: 'search' },
+          organic: [
+            {
+              title: 'Travel Creator (@travelpk) • Instagram',
+              link: 'https://www.instagram.com/travelpk',
+              snippet: 'Pakistani travel vlogger based in Lahore',
+              position: 1,
+            },
+          ],
+        }),
+      } as Response;
+    });
+
+    const results = await adapter.search('site:instagram.com travel pakistani', { numResults: 5 });
+
+    expect(capturedUrl).toBe('https://google.serper.dev/search');
+    expect(capturedHeaders['X-API-KEY']).toBe('test-serper-key');
+    expect(capturedHeaders['Content-Type']).toBe('application/json');
+    expect(capturedBody.q).toBe('site:instagram.com travel pakistani');
+    expect(capturedBody.num).toBe(5);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({
+      title: 'Travel Creator (@travelpk) • Instagram',
+      link: 'https://www.instagram.com/travelpk',
+      snippet: 'Pakistani travel vlogger based in Lahore',
+      position: 1,
     });
   });
 
-  describe('Interface', () => {
-    it('should implement search method', () => {
-      expect(typeof adapter.search).toBe('function');
+  it('searches social profiles across specific platforms', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          searchParameters: { q: body.q, type: 'search' },
+          organic: [
+            {
+              title: 'Foodie (@foodiepk)',
+              link: 'https://www.tiktok.com/@foodiepk',
+              snippet: 'Food reviews in Karachi',
+              position: 1,
+            },
+          ],
+        }),
+      } as Response;
     });
 
-    it('should implement searchSocialProfiles method', () => {
-      expect(typeof adapter.searchSocialProfiles).toBe('function');
-    });
+    const results = await adapter.searchSocialProfiles('foodie Karachi', 'tiktok');
 
-    it('should implement health method', () => {
-      expect(typeof adapter.health).toBe('function');
-    });
+    expect(results).toHaveLength(1);
+    expect(results[0]?.link).toContain('tiktok.com/@foodiepk');
+  });
+
+  it('handles API errors without unhandled rejection', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      text: async () => 'Invalid API key',
+    } as Response);
+
+    await expect(adapter.search('query')).rejects.toThrow('Serper API error: 403');
+  });
+
+  it('honors AbortSignal and aborts immediately without retrying', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      adapter.search('site:instagram.com travel', { signal: controller.signal }),
+    ).rejects.toThrow('Serper search aborted');
   });
 });
 
 describe('ApifyAdapter', () => {
+  const originalFetch = globalThis.fetch;
   let adapter: ApifyAdapter;
 
   beforeEach(() => {
-    adapter = createApifyAdapter({ apiKey: 'test-key' });
+    vi.restoreAllMocks();
+    _resetCircuitForTesting();
+    adapter = createApifyAdapter({ apiKey: 'test-apify-token' });
   });
 
-  describe('Factory', () => {
-    it('should create adapter with config', () => {
-      expect(adapter).toBeInstanceOf(ApifyAdapter);
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('runs actor with input and fetches dataset items', async () => {
+    let actorRunPayload: any = null;
+
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string, init?: any) => {
+      if (url.includes('/runs?')) {
+        actorRunPayload = JSON.parse(init.body);
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            data: {
+              id: 'run_123',
+              defaultDatasetId: 'ds_123',
+              status: 'READY',
+            },
+          }),
+        } as Response;
+      }
+      if (url.includes('/actor-runs/run_123')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: {
+              id: 'run_123',
+              defaultDatasetId: 'ds_123',
+              status: 'SUCCEEDED',
+            },
+          }),
+        } as Response;
+      }
+      if (url.includes('/datasets/ds_123/items')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              handle: '@shahveerjay',
+              displayName: 'Shahveer Jafry',
+              followerCount: 3400000,
+              engagementRate: 9.4,
+              verified: true,
+            },
+          ],
+        } as Response;
+      }
+      return { ok: false, status: 404, text: async () => 'Not found' } as Response;
+    });
+
+    const items = await adapter.runActor(
+      'apify/instagram-scraper',
+      { urls: ['https://www.instagram.com/shahveerjay'] },
+      { timeoutSecs: 30 },
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual({
+      handle: '@shahveerjay',
+      displayName: 'Shahveer Jafry',
+      followerCount: 3400000,
+      engagementRate: 9.4,
+      verified: true,
+    });
+    expect(actorRunPayload).toMatchObject({
+      urls: ['https://www.instagram.com/shahveerjay'],
+      timeoutSecs: 30,
     });
   });
 
-  describe('Interface', () => {
-    it('should implement runActor method', () => {
-      expect(typeof adapter.runActor).toBe('function');
+  it('handles empty dataset results truthfully without error', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/runs?')) {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            data: {
+              id: 'run_empty',
+              defaultDatasetId: 'ds_empty',
+              status: 'READY',
+            },
+          }),
+        } as Response;
+      }
+      if (url.includes('/actor-runs/run_empty')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: {
+              id: 'run_empty',
+              defaultDatasetId: 'ds_empty',
+              status: 'SUCCEEDED',
+            },
+          }),
+        } as Response;
+      }
+      if (url.includes('/datasets/ds_empty/items')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [],
+        } as Response;
+      }
+      return { ok: false, status: 404, text: async () => 'Not found' } as Response;
     });
 
-    it('should implement fetchDataset method', () => {
-      expect(typeof adapter.fetchDataset).toBe('function');
-    });
-
-    it('should implement health method', () => {
-      expect(typeof adapter.health).toBe('function');
-    });
-  });
-});
-
-describe('DiscoveryOrchestrator', () => {
-  // Orchestrator tests require all three adapters
-  // Documenting the pipeline stages here
-
-  it('should have three stages: search, scrape, extract', () => {
-    // Stage 1: Serper (Google SERP) - finds creator URLs
-    // Stage 2: Apify (scraping) - extracts profile data
-    // Stage 3: LLM (extraction/classification) - normalizes data
-    expect(true).toBe(true);
+    const items = await adapter.runActor('apify/instagram-scraper', { urls: ['https://fake.url'] });
+    expect(items).toEqual([]);
   });
 
-  it('should emit DISCOVERY_STAGE_COMPLETED events', () => {
-    // Each stage emits an event via the outbox
-    expect(true).toBe(true);
+  it('handles scraper errors with typed error propagation', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 504,
+      statusText: 'Gateway Timeout',
+      text: async () => 'Actor timed out',
+    } as Response);
+
+    await expect(
+      adapter.runActor('apify/instagram-scraper', { urls: ['https://slow.url'] }),
+    ).rejects.toThrow('Apify API error: 504 Actor timed out');
   });
 
-  it('should handle scrape failures gracefully', () => {
-    // If Apify fails for a URL, keep the search result
-    expect(true).toBe(true);
-  });
+  it('honors AbortSignal and aborts immediately', async () => {
+    const controller = new AbortController();
+    controller.abort();
 
-  it('should handle LLM extraction failures gracefully', () => {
-    // If LLM fails, keep the scraped data
-    expect(true).toBe(true);
+    await expect(
+      adapter.runActor('apify/instagram-scraper', { urls: ['https://instagram.com/fast'] }, { signal: controller.signal }),
+    ).rejects.toThrow('Apify operation aborted');
   });
 });

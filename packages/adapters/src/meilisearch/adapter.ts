@@ -80,7 +80,7 @@ async function withRetry<T>(
 
 export interface MeilisearchCostEvent {
   provider: 'meilisearch';
-  operation: 'index_upsert' | 'search' | 'health';
+  operation: 'index_upsert' | 'search' | 'health' | 'index_delete';
   unitCostUsd: number; // Meilisearch Cloud: near-zero marginal
   timestamp: string;
 }
@@ -111,10 +111,28 @@ export type ProjectionResult =
   | { status: 'projection_deferred'; reason: string }
   | { status: 'error'; error: string };
 
+export type DeletionResult =
+  | { status: 'success'; cost: MeilisearchCostEvent }
+  | { status: 'deletion_deferred'; reason: string }
+  | { status: 'error'; error: string };
+
 export type SearchResult =
-  | { status: 'success'; hits: unknown[]; cost: MeilisearchCostEvent }
+  | {
+      status: 'success';
+      hits: unknown[];
+      cost: MeilisearchCostEvent;
+      totalHits?: number;
+      estimatedTotalHits?: number;
+    }
   | { status: 'degraded'; hits: []; reason: string }
   | { status: 'error'; error: string };
+
+export interface ConfigureIndexResult {
+  created: boolean;
+  primaryKey: string;
+  mismatchDetected: boolean;
+  warning?: string;
+}
 
 // ── Adapter ──────────────────────────────────────────────────
 
@@ -177,9 +195,19 @@ export class MeilisearchAdapter {
       };
     }
 
+    if (!doc.creatorId || typeof doc.creatorId !== 'string' || doc.creatorId.trim() === '') {
+      return {
+        status: 'error',
+        error: 'Document missing required primary key: creatorId',
+      };
+    }
+
+    // Generate compatibility alias id strictly derived from canonical creatorId
+    doc.id = doc.creatorId;
+
     try {
       // Obligation 2: Retry discipline (idempotent upsert)
-      await withRetry(() => this.getIndex().addDocuments([doc]));
+      await withRetry(() => this.getIndex().addDocuments([doc], { primaryKey: 'creatorId' }));
       recordSuccess();
       return { status: 'success', cost: emitCost('index_upsert') };
     } catch (err) {
@@ -199,10 +227,69 @@ export class MeilisearchAdapter {
       };
     }
 
+    for (const doc of docs) {
+      if (!doc.creatorId || typeof doc.creatorId !== 'string' || doc.creatorId.trim() === '') {
+        return {
+          status: 'error',
+          error: 'Document missing required primary key: creatorId',
+        };
+      }
+      // Generate compatibility alias id strictly derived from canonical creatorId
+      doc.id = doc.creatorId;
+    }
+
     try {
-      await withRetry(() => this.getIndex().addDocuments(docs));
+      await withRetry(() => this.getIndex().addDocuments(docs, { primaryKey: 'creatorId' }));
       recordSuccess();
       return { status: 'success', cost: emitCost('index_upsert') };
+    } catch (err) {
+      recordFailure();
+      return {
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Unknown Meilisearch error',
+      };
+    }
+  }
+
+  // ── Obligation 6: Degraded-mode index delete (GDPR Erasure / Step 2B.2) ──
+
+  async deleteDocument(creatorId: string): Promise<DeletionResult> {
+    if (isCircuitOpen()) {
+      return {
+        status: 'deletion_deferred',
+        reason: `Circuit breaker open (failures: ${circuit.failureCount}). Deletion deferred.`,
+      };
+    }
+
+    if (!creatorId || typeof creatorId !== 'string' || creatorId.trim() === '') {
+      return {
+        status: 'error',
+        error: 'Document missing required primary key: creatorId',
+      };
+    }
+
+    try {
+      await withRetry(async () => {
+        try {
+          await this.getIndex().deleteDocument(creatorId);
+        } catch (err: unknown) {
+          // Idempotency: absent documents are treated as success
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          const errorCode = (err as { code?: string; status?: number })?.code;
+          const status = (err as { status?: number })?.status;
+          if (
+            status === 404 ||
+            errorCode === 'document_not_found' ||
+            errorCode === 'index_not_found' ||
+            errorMsg.toLowerCase().includes('not found')
+          ) {
+            return;
+          }
+          throw err;
+        }
+      });
+      recordSuccess();
+      return { status: 'success', cost: emitCost('index_delete') };
     } catch (err) {
       recordFailure();
       return {
@@ -229,17 +316,24 @@ export class MeilisearchAdapter {
     }
 
     try {
+      const searchOptions: Record<string, unknown> = {
+        limit,
+        offset,
+      };
+      if (filters && filters.trim() !== '') {
+        searchOptions['filter'] = filters.trim();
+      }
       const result = await withRetry(() =>
-        this.getIndex().search(query, {
-          filter: filters ? [filters] : undefined,
-          limit,
-          offset,
-        }),
+        this.getIndex().search(query, searchOptions),
       );
       recordSuccess();
+      const rawResult = result as { totalHits?: number; estimatedTotalHits?: number };
+      const totalHits = rawResult.totalHits ?? rawResult.estimatedTotalHits;
       return {
         status: 'success',
         hits: result.hits,
+        totalHits,
+        estimatedTotalHits: rawResult.estimatedTotalHits,
         cost: emitCost('search'),
       };
     } catch (err) {
@@ -299,7 +393,14 @@ export class MeilisearchAdapter {
     });
   }
 
-  async configureIndex(): Promise<void> {
+  async configureIndex(): Promise<ConfigureIndexResult> {
+    let created = false;
+    try {
+      await this.client.createIndex(this.indexName, { primaryKey: 'creatorId' });
+      created = true;
+    } catch {
+      // Index already exists — createIndex does NOT change an existing index's primary key
+    }
     const index = this.getIndex();
 
     await index.updateSettings({
@@ -343,6 +444,34 @@ export class MeilisearchAdapter {
         'bio',
       ],
     });
+
+    let currentPrimaryKey = 'creatorId';
+    let mismatchDetected = false;
+    let warning: string | undefined;
+
+    try {
+      const rawInfo = await index.getRawInfo();
+      currentPrimaryKey = rawInfo.primaryKey ?? 'creatorId';
+      if (rawInfo.primaryKey && rawInfo.primaryKey !== 'creatorId') {
+        mismatchDetected = true;
+        warning = `Index '${this.indexName}' already exists with primary key '${rawInfo.primaryKey}', not 'creatorId'. Meilisearch does not allow modifying the primary key of an existing index in place. Safe index recreation/migration procedure required.`;
+        console.warn(`[MeilisearchAdapter] ${warning}`);
+      }
+    } catch {
+      // Non-fatal if fetch rawInfo fails in mock/offline environments
+    }
+
+    return { created, primaryKey: currentPrimaryKey, mismatchDetected, warning };
+  }
+
+  async getPrimaryKey(indexName?: string): Promise<string | null> {
+    try {
+      const targetIndex = indexName ? this.client.index(indexName) : this.getIndex();
+      const rawInfo = await targetIndex.getRawInfo();
+      return rawInfo.primaryKey ?? null;
+    } catch {
+      return null;
+    }
   }
 
   // ── Generic upsert/search (indexName parameter) ───────────
@@ -357,12 +486,74 @@ export class MeilisearchAdapter {
         reason: `Circuit breaker open. Document deferred to index: ${indexName}.`,
       };
     }
+
+    const creatorId = document['creatorId'];
+    if (!creatorId || typeof creatorId !== 'string' || creatorId.trim() === '') {
+      return {
+        status: 'error',
+        error: 'Document missing required primary key: creatorId',
+      };
+    }
+
+    // Canonical key enforcement: generate id strictly derived from creatorId.
+    // Do not silently accept an id-only document and derive creatorId from it.
+    document['id'] = creatorId;
+
     try {
       await withRetry(() =>
-        this.client.index(indexName).addDocuments([document]),
+        this.client.index(indexName).addDocuments([document], { primaryKey: 'creatorId' }),
       );
       recordSuccess();
       return { status: 'success', cost: emitCost('index_upsert') };
+    } catch (err) {
+      recordFailure();
+      return {
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Unknown Meilisearch error',
+      };
+    }
+  }
+
+  async deleteDocumentFromIndex(
+    indexName: string,
+    creatorId: string,
+  ): Promise<DeletionResult> {
+    if (isCircuitOpen()) {
+      return {
+        status: 'deletion_deferred',
+        reason: `Circuit breaker open (failures: ${circuit.failureCount}). Deletion deferred from index: ${indexName}.`,
+      };
+    }
+
+    if (!creatorId || typeof creatorId !== 'string' || creatorId.trim() === '') {
+      return {
+        status: 'error',
+        error: 'Document missing required primary key: creatorId',
+      };
+    }
+
+    try {
+      await withRetry(async () => {
+        try {
+          await this.client.index(indexName).deleteDocument(creatorId);
+        } catch (err: unknown) {
+          // Idempotency: absent documents are treated as success
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          const errorCode = (err as { code?: string; status?: number })?.code;
+          const status = (err as { status?: number })?.status;
+          if (
+            status === 404 ||
+            errorCode === 'document_not_found' ||
+            errorCode === 'index_not_found' ||
+            errorMsg.toLowerCase().includes('not found')
+          ) {
+            return;
+          }
+          throw err;
+        }
+      });
+      recordSuccess();
+      return { status: 'success', cost: emitCost('index_delete') };
     } catch (err) {
       recordFailure();
       return {
@@ -395,15 +586,26 @@ export class MeilisearchAdapter {
         else if (Array.isArray(value))
           filterParts.push(`${key} IN [${value.map((v) => `"${v}"`).join(', ')}]`);
       }
+      const searchOptions: Record<string, unknown> = {
+        limit,
+        offset,
+      };
+      if (filterParts.length > 0) {
+        searchOptions['filter'] = filterParts;
+      }
       const result = await withRetry(() =>
-        this.client.index(indexName).search(query, {
-          filter: filterParts.length > 0 ? filterParts : undefined,
-          limit,
-          offset,
-        }),
+        this.client.index(indexName).search(query, searchOptions),
       );
       recordSuccess();
-      return { status: 'success', hits: result.hits, cost: emitCost('search') };
+      const rawResult = result as { totalHits?: number; estimatedTotalHits?: number };
+      const totalHits = rawResult.totalHits ?? rawResult.estimatedTotalHits;
+      return {
+        status: 'success',
+        hits: result.hits,
+        totalHits,
+        estimatedTotalHits: rawResult.estimatedTotalHits,
+        cost: emitCost('search'),
+      };
     } catch (err) {
       recordFailure();
       return {
@@ -422,11 +624,12 @@ export class MeilisearchAdapter {
   }
 }
 
-// ── Meilisearch Document Schema (Doc 15 B1) ─────────────────
+// ── Meilisearch Document Schema (Doc 15 B1 / ADR-027 / Step 2B) ───────
 
 export interface MeilisearchDocument {
-  // Identity
+  // Identity (primary key is creatorId; id retained as compatibility alias)
   creatorId: string;
+  id?: string; // Backwards compatibility alias
   displayName: string;
   primaryHandle: string;
   handleVariants: string[];
@@ -435,19 +638,25 @@ export interface MeilisearchDocument {
   platform: string;
   canonicalUrl: string;
   followerCount: number;
-  engagementRate: number;
+  engagementRate: number | null;
+  postCount?: number | null;
   lastPostAt: string | null;
+
+  // Search & filter fields
+  location?: string | null;
+  languages?: string[];
+  bio?: string | null;
 
   // LLM-derived attributes (write-path intelligence)
   primaryNiche: string;
   secondaryNiches: string[];
-  authenticityBand: string | null;
+  authenticityBand: 'strong' | 'moderate' | 'weak' | 'unknown' | string | null;
   authenticityScore: number | null;
   qualityScore: number | null;
   audiencePkShare: number | null;
   audienceGccShare: number | null;
   audienceDiasporaShare: number | null;
-  languageMix: Record<string, number> | null;
+  languageMix: Record<string, number> | string[] | null;
   summary: string | null;
 
   // Demographics (Problem 3)
@@ -466,7 +675,9 @@ export interface MeilisearchDocument {
 
   // Freshness
   lastEnrichedAt: string | null;
+  lastRefreshedAt?: string | null;
   indexProjectionVersion: number;
+  createdAt?: string;
 }
 
 // ── Factory (Obligation 1 + 7: credentials from env, sandbox via config) ──

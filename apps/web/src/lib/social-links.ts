@@ -4,10 +4,11 @@
  */
 
 export interface CreatorSocialMeta {
-  displayName?: string;
-  primaryHandle?: string;
-  platform?: string;
-  canonicalUrl?: string;
+  displayName?: string | null;
+  primaryHandle?: string | null;
+  platform?: string | null;
+  canonicalUrl?: string | null;
+  avatarUrl?: string | null;
 }
 
 export function getVerifiedSocialUrl(creator: CreatorSocialMeta): string {
@@ -221,7 +222,7 @@ export function getVerifiedSocialUrl(creator: CreatorSocialMeta): string {
   return `https://www.instagram.com/${handle}/`;
 }
 
-export function getVerifiedAvatarUrl(creator: { displayName?: string; primaryHandle?: string; avatarUrl?: string }): string {
+export function getVerifiedAvatarUrl(creator: CreatorSocialMeta): string {
   const name = (creator.displayName || '').toLowerCase();
   const handle = (creator.primaryHandle || '').toLowerCase().replace(/^@+/, '').trim();
 

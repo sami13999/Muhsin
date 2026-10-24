@@ -1,6 +1,7 @@
 export * as creatorRepository from './creator.repository.js';
 export * as workspaceRepository from './workspace.repository.js';
 export * as creditRepository from './credit.repository.js';
+export * as discoveryJobRepository from './discovery-job.repository.js';
 
 export type {
   CreatorFilters,

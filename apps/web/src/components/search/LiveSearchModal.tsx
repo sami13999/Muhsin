@@ -66,19 +66,30 @@ export default function LiveSearchModal({ isOpen, currentQuery = '', onClose, on
 
     // Step 3: Processing metrics & API request in parallel
     let fetchedData: any[] = [];
+    let isOfflineFallback = false;
+    let isJobStillProcessing = false;
+    let activeJobId: string | null = null;
     try {
       const res = await api.searchCreatorsLive(query);
       if (res && res.data) {
         fetchedData = res.data;
+        if ((res as any).isMock) {
+          isOfflineFallback = true;
+        }
       }
-    } catch {
-      // Fallback live results if API offline
-      fetchedData = [
-        { creatorId: 'cr-live-001', displayName: 'Shahveer Jafry', primaryHandle: '@ShahveerJay', platform: 'youtube', followerCount: 3400000, engagementRate: 9.4, _rankingScore: 99, city: 'Lahore', niche: 'Vlogs & Entertainment', iqScore: 97, verified: true, isLive: true, avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80', bio: 'Digital creator, family vlogger & Pakistani podcast host', canonicalUrl: 'https://www.youtube.com/@ShahveerJay' },
-        { creatorId: 'cr-live-002', displayName: 'Irfan Junejo', primaryHandle: '@IrfanJunejo', platform: 'youtube', followerCount: 1600000, engagementRate: 8.2, _rankingScore: 98, city: 'Karachi', niche: 'Cinematic & Lifestyle', iqScore: 96, verified: true, isLive: true, avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80', bio: 'Cinematic storytelling, lifestyle photography & honest tech vlogs', canonicalUrl: 'https://www.youtube.com/@IrfanJunejo' },
-        { creatorId: 'cr-live-003', displayName: 'Romaisa Khan', primaryHandle: '@romaisakhann', platform: 'tiktok', followerCount: 2100000, engagementRate: 11.4, _rankingScore: 96, city: 'Karachi', niche: 'Entertainment & Comedy', iqScore: 95, verified: true, isLive: true, avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&auto=format&fit=crop&q=80', bio: 'Actress & TikTok star known for viral comedy skits & lifestyle', canonicalUrl: 'https://www.tiktok.com/@romaisakhann' },
-        { creatorId: 'cr-live-004', displayName: 'Arslan Naseer (CBA)', primaryHandle: '@arsalancba', platform: 'youtube', followerCount: 1250000, engagementRate: 8.9, _rankingScore: 97, city: 'Islamabad', niche: 'Comedy & Parody', iqScore: 96, verified: true, isLive: true, avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&auto=format&fit=crop&q=80', bio: 'Comics By Arslan (CBA) creator, satirist, YouTuber & TV actor', canonicalUrl: 'https://www.youtube.com/@arsalancba' },
-      ];
+    } catch (err: any) {
+      if (err?.name === 'DiscoveryJobTimeoutError') {
+        isJobStillProcessing = true;
+        activeJobId = err.jobId || null;
+        fetchedData = [];
+      } else {
+        isOfflineFallback = true;
+        // Demo catalog fallback ONLY when offline/unreachable
+        fetchedData = [
+          { creatorId: 'cr-live-001', displayName: 'Shahveer Jafry', primaryHandle: '@ShahveerJay', platform: 'youtube', followerCount: 3400000, engagementRate: 9.4, _rankingScore: 99, city: 'Lahore', niche: 'Vlogs & Entertainment', iqScore: 97, verified: true, isLive: false, isDemo: true, avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80', bio: '[Demo Profile] Digital creator, family vlogger & Pakistani podcast host', canonicalUrl: 'https://www.youtube.com/@ShahveerJay' },
+          { creatorId: 'cr-live-002', displayName: 'Irfan Junejo', primaryHandle: '@IrfanJunejo', platform: 'youtube', followerCount: 1600000, engagementRate: 8.2, _rankingScore: 98, city: 'Karachi', niche: 'Cinematic & Lifestyle', iqScore: 96, verified: true, isLive: false, isDemo: true, avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80', bio: '[Demo Profile] Cinematic storytelling, lifestyle photography & honest tech vlogs', canonicalUrl: 'https://www.youtube.com/@IrfanJunejo' },
+        ];
+      }
     }
 
     await new Promise((r) => setTimeout(r, 600));
@@ -90,11 +101,24 @@ export default function LiveSearchModal({ isOpen, currentQuery = '', onClose, on
     setProgress(100);
 
     await new Promise((r) => setTimeout(r, 400));
-    toast.success(
-      'Live Search Complete',
-      `Scraped Instagram, TikTok, and YouTube in real time. Found ${fetchedData.length} fresh creators. Deducted ${cost} credits.`
-    );
-    onRunSearch(cost, query, fetchedData);
+    if (isJobStillProcessing) {
+      toast.info(
+        'Job Processing in Background',
+        `Live discovery is continuing in the background (Job ID: ${activeJobId || 'active'}). You can check status anytime.`
+      );
+    } else if (isOfflineFallback) {
+      toast.info(
+        'Demo Catalog Preview',
+        'Live discovery services unreachable or in demo mode. Displaying catalog preview.'
+      );
+      onRunSearch(cost, query, fetchedData);
+    } else {
+      toast.success(
+        'Live Search Complete',
+        `Discovered ${fetchedData.length} creators across platforms. Deducted ${cost} credits.`
+      );
+      onRunSearch(cost, query, fetchedData);
+    }
     setIsRunning(false);
     onClose();
   };

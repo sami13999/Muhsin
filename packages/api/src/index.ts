@@ -46,6 +46,14 @@ import { createOutreachService } from './services/outreach.service.js';
 import { createAnalyticsService } from './services/analytics.service.js';
 import { createStaffService } from './services/staff.service.js';
 
+export {
+  createDiscoveryOrchestrator,
+  DiscoveryOrchestrator,
+  type DiscoveryJob,
+  type DiscoveryResult,
+  type DiscoveryConfig,
+} from './services/discovery/index.js';
+
 const logger = createLogger('api:app');
 
 // ── Configuration ─────────────────────────────────────────────
@@ -69,32 +77,73 @@ export interface AppConfig {
   jwtAudience?: string;
   jwksUri?: string;
   corsOrigins?: string[];
+  mockMode?: boolean;
 }
 
 // ── App Factory ───────────────────────────────────────────────
 
 export function createApp(config: AppConfig = {}): Hono {
-  // ── Validate critical environment variables (TD-08) ────────
-  const requiredEnvVars: Array<{ env: string; configKey?: keyof AppConfig }> = [
-    { env: 'DATABASE_URL', configKey: 'databaseUrl' },
-    { env: 'SUPABASE_URL', configKey: 'supabaseUrl' },
-    { env: 'SUPABASE_ANON_KEY', configKey: 'supabaseAnonKey' },
-    { env: 'JWKS_URI', configKey: 'jwksUri' },
-    { env: 'JWT_ISSUER', configKey: 'jwtIssuer' },
-    { env: 'JWT_AUDIENCE', configKey: 'jwtAudience' },
-  ];
+  const nodeEnv = process.env['NODE_ENV'] ?? 'development';
+  const isProduction = nodeEnv === 'production';
 
-  const missingVars = requiredEnvVars.filter(({ env, configKey }) =>
-    !(configKey && config[configKey]) && !process.env[env],
-  );
+  // ── Mock Mode Gate (TD-08 / Sec-01) ─────────────────────────
+  // Mock mode is strictly an explicit opt-in for local dev and tests.
+  // It MUST NEVER activate in production under any circumstances.
+  const requestedMockMode =
+    config.mockMode === true || process.env['MOCK_MODE'] === 'true';
 
-  if (missingVars.length > 0) {
-    const names = missingVars.map((v) => v.env);
-    logger.error(`Missing required environment variables: ${names.join(', ')}`);
+  if (isProduction && requestedMockMode) {
+    logger.error('CRITICAL: Attempted to activate mock mode in production environment.');
     throw new Error(
-      `[MUSHIN] FATAL: Missing required environment variables: ${names.join(', ')}. ` +
-      'Copy .env.example to .env and fill in your credentials.',
+      '[MUSHIN] FATAL: Mock mode cannot be activated in production environment (NODE_ENV=production).',
     );
+  }
+
+  const isMockMode = !isProduction && requestedMockMode;
+
+  // ── Validate critical environment variables (TD-08) ────────
+  // When not running in explicit mock mode, require valid production/staging credentials.
+  if (!isMockMode) {
+    const requiredEnvVars: Array<{ env: string; configKey?: keyof AppConfig }> = [
+      { env: 'DATABASE_URL', configKey: 'databaseUrl' },
+      { env: 'SUPABASE_URL', configKey: 'supabaseUrl' },
+      { env: 'SUPABASE_ANON_KEY', configKey: 'supabaseAnonKey' },
+      { env: 'JWKS_URI', configKey: 'jwksUri' },
+      { env: 'JWT_ISSUER', configKey: 'jwtIssuer' },
+      { env: 'JWT_AUDIENCE', configKey: 'jwtAudience' },
+    ];
+
+    const missingVars = requiredEnvVars.filter(({ env, configKey }) =>
+      !(configKey && config[configKey]) && !process.env[env],
+    );
+
+    if (missingVars.length > 0) {
+      const names = missingVars.map((v) => v.env);
+      logger.error(`Missing required environment variables: ${names.join(', ')}`);
+      throw new Error(
+        `[MUSHIN] FATAL: Missing required environment variables: ${names.join(', ')}. ` +
+        'Copy .env.example to .env and fill in your credentials.',
+      );
+    }
+
+    // Validate URL formats for auth and db endpoints
+    const jwksUri = config.jwksUri ?? process.env['JWKS_URI'];
+    if (jwksUri) {
+      try {
+        new URL(jwksUri);
+      } catch {
+        throw new Error(`[MUSHIN] FATAL: Invalid JWKS_URI format: "${jwksUri}". Must be a valid URL.`);
+      }
+    }
+
+    const supabaseUrl = config.supabaseUrl ?? process.env['SUPABASE_URL'];
+    if (supabaseUrl) {
+      try {
+        new URL(supabaseUrl);
+      } catch {
+        throw new Error(`[MUSHIN] FATAL: Invalid SUPABASE_URL format: "${supabaseUrl}". Must be a valid URL.`);
+      }
+    }
   }
 
   const app = new Hono();
@@ -142,14 +191,8 @@ export function createApp(config: AppConfig = {}): Hono {
     credentials: true,
   }));
 
-  const isMockMode =
-    process.env['MOCK_MODE'] === 'true' ||
-    process.env['DATABASE_URL']?.includes('host:5432') ||
-    process.env['SUPABASE_URL']?.includes('your-project.supabase.co') ||
-    !process.env['JWKS_URI'] ||
-    process.env['JWKS_URI']?.includes('auth.mushin.io');
   if (isMockMode) {
-    logger.info('Database or auth credentials are local/placeholder — entering local MOCK/DEMO mode');
+    logger.info('Explicit local mock mode active — using development stubs');
     
     // Health routes
     registerHealthCheck('database', async () => ({ status: 'healthy', message: 'Mock Database Active' }));
@@ -161,6 +204,9 @@ export function createApp(config: AppConfig = {}): Hono {
       { id: 'usr-001', email: 'admin@mushin.app', password: 'password123', name: 'Admin User' },
       { id: 'usr-002', email: 'owner@acme.com', password: 'password123', name: 'Acme Owner' },
     ];
+
+    // Mock Active Sessions Store
+    const mockActiveSessions = new Map<string, { id: string; email: string; name?: string }>();
 
     app.post('/auth/login', async (c) => {
       const requestId = c.get('requestId') || 'mock-request-id';
@@ -199,15 +245,9 @@ export function createApp(config: AppConfig = {}): Hono {
         );
       }
 
-      const reqPassword = String(password).trim().toLowerCase();
-      const storedPassword = user.password.toLowerCase();
-      const isDevPasswordMatch =
-        user.password === password ||
-        reqPassword === storedPassword ||
-        reqPassword === 'password123' ||
-        reqPassword === 'password123!';
+      const isPasswordMatch = user.password === password;
 
-      if (!isDevPasswordMatch) {
+      if (!isPasswordMatch) {
         return c.json(
           {
             error: {
@@ -220,12 +260,16 @@ export function createApp(config: AppConfig = {}): Hono {
         );
       }
 
+      const accessToken = `mock-token-${user.id}-${Date.now()}`;
+      const refreshToken = `mock-refresh-${user.id}-${Date.now()}`;
+      mockActiveSessions.set(accessToken, { id: user.id, email: user.email, name: user.name || user.email.split('@')[0] });
+
       return c.json({
         data: {
           user: { id: user.id, email: user.email, name: user.name || user.email.split('@')[0] },
           session: {
-            access_token: `token-${user.id}-${Date.now()}`,
-            refresh_token: `refresh-${user.id}-${Date.now()}`,
+            access_token: accessToken,
+            refresh_token: refreshToken,
             expires_at: Math.floor(Date.now() / 1000) + 86400 * 30,
           },
         },
@@ -292,13 +336,17 @@ export function createApp(config: AppConfig = {}): Hono {
 
       mockRegisteredUsers.push(newUser);
 
+      const accessToken = `mock-token-${newUser.id}-${Date.now()}`;
+      const refreshToken = `mock-refresh-${newUser.id}-${Date.now()}`;
+      mockActiveSessions.set(accessToken, { id: newUser.id, email: newUser.email, name: newUser.name });
+
       return c.json(
         {
           data: {
             user: { id: newUser.id, email: newUser.email, name: newUser.name },
             session: {
-              access_token: `token-${newUser.id}-${Date.now()}`,
-              refresh_token: `refresh-${newUser.id}-${Date.now()}`,
+              access_token: accessToken,
+              refresh_token: refreshToken,
               expires_at: Math.floor(Date.now() / 1000) + 86400 * 30,
             },
           },
@@ -308,11 +356,52 @@ export function createApp(config: AppConfig = {}): Hono {
       );
     });
 
-    app.post('/auth/logout', (c) => c.json({ data: { success: true } }));
-    app.get('/auth/session', (c) => c.json({
-      data: { user: { id: 'usr-001', email: 'admin@mushin.app' } },
-      meta: { request_id: 'mock-request-id' }
-    }));
+    app.post('/auth/logout', (c) => {
+      const authHeader = c.req.header('Authorization');
+      const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      if (accessToken) {
+        mockActiveSessions.delete(accessToken);
+      }
+      return c.json({ data: { success: true }, meta: { request_id: c.get('requestId') || 'mock-request-id' } });
+    });
+
+    app.get('/auth/session', (c) => {
+      const requestId = c.get('requestId') || 'mock-request-id';
+      const authHeader = c.req.header('Authorization');
+      const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+
+      if (!accessToken) {
+        return c.json(
+          {
+            error: {
+              code: 'AUTH_TOKEN_MISSING',
+              message: 'Authorization header is required',
+              request_id: requestId,
+            },
+          },
+          401,
+        );
+      }
+
+      const sessionUser = mockActiveSessions.get(accessToken);
+      if (!sessionUser) {
+        return c.json(
+          {
+            error: {
+              code: 'AUTH_TOKEN_INVALID',
+              message: 'Invalid or expired token',
+              request_id: requestId,
+            },
+          },
+          401,
+        );
+      }
+
+      return c.json({
+        data: { user: sessionUser },
+        meta: { request_id: requestId },
+      });
+    });
 
     // Mock API Workspace & Analytics
     app.get('/api/v1/workspaces', (c) => c.json({
@@ -1267,8 +1356,8 @@ export function createApp(config: AppConfig = {}): Hono {
   // ── Resolve dependencies ───────────────────────────────────
   const db = config.db ?? (config.databaseUrl ? getDb(config.databaseUrl) : getDb(process.env['DATABASE_URL']!));
 
-  const meilisearchHost = config.meilisearchHost ?? process.env['MEILISEARCH_HOST']!;
-  const meilisearchApiKey = config.meilisearchApiKey ?? process.env['MEILISEARCH_API_KEY']!;
+  const meilisearchHost = config.meilisearchHost ?? process.env['MEILISEARCH_HOST'] ?? 'http://localhost:7700';
+  const meilisearchApiKey = config.meilisearchApiKey ?? process.env['MEILISEARCH_API_KEY'] ?? 'test-api-key';
 
   const meilisearch: MeilisearchAdapter = createMeilisearchAdapter({
     host: meilisearchHost,
@@ -1276,7 +1365,7 @@ export function createApp(config: AppConfig = {}): Hono {
   });
 
   const llm: LLMAdapter = createLLMAdapter({
-    groqApiKey: config.groqApiKey ?? process.env['GROQ_API_KEY']!,
+    groqApiKey: config.groqApiKey ?? process.env['GROQ_API_KEY'] ?? 'test-groq-key',
     anthropicApiKey: config.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY'],
   });
 

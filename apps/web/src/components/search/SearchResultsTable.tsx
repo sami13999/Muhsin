@@ -8,14 +8,14 @@ interface Creator {
   displayName: string;
   primaryHandle: string;
   platform: string;
-  followerCount: number;
-  engagementRate: number;
+  followerCount: number | null;
+  engagementRate: number | null;
   _rankingScore: number;
-  city: string;
-  niche: string;
-  iqScore: number;
+  city: string | null;
+  niche: string | null;
+  iqScore: number | null;
   avatarUrl?: string;
-  bio?: string;
+  bio?: string | null;
   canonicalUrl?: string;
 }
 
@@ -38,11 +38,13 @@ export default function SearchResultsTable({
   const getCreatorDetails = (creator: Creator) => {
     return {
       avatar: getVerifiedAvatarUrl(creator),
-      auth: creator.iqScore,
-      iq: creator.iqScore,
-      followers: creator.followerCount >= 1000000 
-        ? `${(creator.followerCount / 1000000).toFixed(1)}M` 
-        : `${(creator.followerCount / 1000).toFixed(0)}K`
+      auth: creator.iqScore != null ? creator.iqScore : '—',
+      iq: creator.iqScore != null ? creator.iqScore : '—',
+      followers: creator.followerCount != null
+        ? creator.followerCount >= 1000000 
+          ? `${(creator.followerCount / 1000000).toFixed(1)}M` 
+          : `${(creator.followerCount / 1000).toFixed(0)}K`
+        : 'N/A'
     };
   };
 
@@ -122,7 +124,7 @@ export default function SearchResultsTable({
                         >
                           {c.primaryHandle} ↗
                         </a>
-                        <span>• {c.city}</span>
+                        <span>• {c.city || 'Pakistan'}</span>
                       </div>
                     </div>
                   </div>
@@ -155,7 +157,7 @@ export default function SearchResultsTable({
                 </td>
 
                 <td style={{ padding: '16px 20px', textAlign: 'right', fontWeight: 600, color: '#334155' }}>
-                  {c.engagementRate}%
+                  {c.engagementRate != null ? `${c.engagementRate}%` : 'N/A'}
                 </td>
 
                 <td style={{ padding: '16px 20px', textAlign: 'right', fontWeight: 600, color: '#334155' }}>

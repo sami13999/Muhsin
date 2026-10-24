@@ -20,8 +20,11 @@ const erasure = new Hono();
  * POST /creators/:id/erasure
  * Execute GDPR Tier 2 erasure for a creator.
  *
+ * Atomically commits PostgreSQL tombstoning/nullification and the outbox event (ADR-020).
+ * Downstream search-index deletion in Meilisearch is enqueued asynchronously via outbox relay.
+ *
  * Body: { reason: string (min 10 chars), requestedBy: string }
- * Response: { status: 'completed' | 'not_found' | 'already_erased', creatorId: string }
+ * Response: { status: 'completed' | 'not_found' | 'already_erased', creatorId: string, searchIndexSync?: 'pending' }
  */
 erasure.post('/:id/erasure', async (c) => {
   const creatorId = c.req.param('id');
@@ -36,9 +39,46 @@ erasure.post('/:id/erasure', async (c) => {
     );
   }
 
-  // Execute erasure
+  // Execute erasure within transaction (ADR-020: state change + outbox event in same tx)
   const db = c.get('db');
-  const result = await creatorRepository.eraseCreator(db, creatorId);
+  const correlationId = (c.get('requestId') as string) || crypto.randomUUID();
+
+  let result: 'completed' | 'not_found' | 'already_erased' = 'not_found';
+
+  try {
+    await db.transaction(async (tx: unknown) => {
+      const txDb = tx as Database;
+      result = await creatorRepository.eraseCreator(txDb, creatorId);
+
+      if (result === 'completed') {
+        await emitEvent(txDb as Parameters<typeof emitEvent>[0], {
+          eventId: crypto.randomUUID(),
+          type: EVENT_TYPES.CREATOR_ERASED,
+          schemaVersion: 1,
+          scopeClass: 'GCP',
+          actor: { type: 'staff', id: requestedBy },
+          correlationId,
+          payload: {
+            creatorId,
+            reason,
+            requestedBy,
+            erasedAt: new Date().toISOString(),
+          },
+          occurredAt: new Date(),
+        });
+      }
+    });
+  } catch {
+    return c.json(
+      {
+        error: {
+          code: 'ERASURE_TRANSACTION_FAILED',
+          message: 'Failed to atomically commit creator erasure and outbox event',
+        },
+      },
+      500,
+    );
+  }
 
   if (result === 'not_found') {
     return c.json(
@@ -51,31 +91,12 @@ erasure.post('/:id/erasure', async (c) => {
     return c.json({ status: 'already_erased', creatorId });
   }
 
-  // Emit erasure event (ADR-020 — in same transaction conceptually)
-  // Note: In production, this would be wrapped in db.transaction()
-  // For now, emit outside transaction as the erasure is already committed
-  try {
-    await emitEvent(db as Parameters<typeof emitEvent>[0], {
-      eventId: crypto.randomUUID(),
-      type: EVENT_TYPES.CREATOR_ERASED,
-      schemaVersion: 1,
-      scopeClass: 'GCP',
-      actor: { type: 'staff', id: requestedBy },
-      correlationId: crypto.randomUUID(),
-      payload: {
-        creatorId,
-        reason,
-        requestedBy,
-        erasedAt: new Date().toISOString(),
-      },
-      occurredAt: new Date(),
-    });
-  } catch {
-    // Event emission failure is non-fatal for erasure
-    // The erasure itself is committed
-  }
-
-  return c.json({ status: 'completed', creatorId });
+  // Response: DB erasure and outbox event committed; search-index deletion is enqueued asynchronously
+  return c.json({
+    status: 'completed',
+    creatorId,
+    searchIndexSync: 'pending',
+  });
 });
 
 /**

@@ -8,7 +8,7 @@ import { jwtVerify, createRemoteJWKSet, type JWTVerifyResult } from 'jose';
 import { sql } from 'drizzle-orm';
 import type { TenancyContext } from '@mushin/shared';
 import type { Database } from '@mushin/database';
-import { workspaceRepository } from '@mushin/database';
+import { workspaceRepository, withWorkspaceTransaction } from '@mushin/database';
 
 // Extend Hono context to carry tenancy
 declare module 'hono' {
@@ -197,14 +197,14 @@ export function tenancyMiddleware(config: {
 
     c.set('tenancy', tenancy);
 
-    // Set PostgreSQL session variable for RLS (Layer 3 enforcement)
-    // This ensures all queries in this request are scoped to the workspace.
-    await config.db.execute(
-      sql`SELECT set_config('app.current_workspace_id', ${workspaceId}, true)`
-    );
-
-    await next();
-    return;
+    // Execute downstream middleware and route handlers within an explicit
+    // database transaction that sets app.current_workspace_id locally.
+    // This guarantees RLS enforcement for all queries on `tx` (c.get('db')),
+    // auto-cleans on commit/rollback, and prevents connection pool leakage.
+    return await withWorkspaceTransaction(config.db, workspaceId, async (tx) => {
+      c.set('db', tx);
+      await next();
+    });
   };
 }
 

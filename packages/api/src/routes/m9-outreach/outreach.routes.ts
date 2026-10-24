@@ -47,7 +47,8 @@ export function createOutreachRoutes(outreachService: OutreachService): Hono {
       );
     }
 
-    const result = await outreachService.sendMessage({
+    const svc = c.get('db') ? outreachService.withDb(c.get('db')) : outreachService;
+    const result = await svc.sendMessage({
       workspaceId: tenancy.workspaceId,
       creatorId,
       channel: channel as OutreachChannel,
@@ -117,7 +118,8 @@ export function createOutreachRoutes(outreachService: OutreachService): Hono {
       );
     }
 
-    const result = await outreachService.enrollInSequence(tenancy.workspaceId, creatorId, sequenceId);
+    const svc = c.get('db') ? outreachService.withDb(c.get('db')) : outreachService;
+    const result = await svc.enrollInSequence(tenancy.workspaceId, creatorId, sequenceId);
 
     if (result.blocked) {
       return c.json(

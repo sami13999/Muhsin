@@ -8,16 +8,16 @@ interface Creator {
   displayName: string;
   primaryHandle: string;
   platform: string;
-  followerCount: number;
-  engagementRate: number;
+  followerCount: number | null;
+  engagementRate: number | null;
   _rankingScore: number;
-  city: string;
-  niche: string;
-  iqScore: number;
+  city: string | null;
+  niche: string | null;
+  iqScore: number | null;
   avatarUrl?: string;
   locationNiche?: string;
   tags?: string[];
-  authScore?: number;
+  authScore?: number | null;
   verified?: boolean;
   canonicalUrl?: string;
 }
@@ -40,8 +40,11 @@ export default function SearchResultsGrid({
     return {
       ...creator,
       avatarUrl: getVerifiedAvatarUrl(creator),
-      locationNiche: `${creator.city} • ${creator.niche}`,
-      tags: [`#${creator.niche.toLowerCase().replace(/[^a-z0-9]/g, '')}`, `#${creator.city.toLowerCase()}`],
+      locationNiche: `${creator.city || 'Pakistan'} • ${creator.niche || 'General'}`,
+      tags: [
+        creator.niche ? `#${creator.niche.toLowerCase().replace(/[^a-z0-9]/g, '')}` : '#creator',
+        creator.city ? `#${creator.city.toLowerCase().replace(/[^a-z0-9]/g, '')}` : '#pakistan',
+      ],
       authScore: creator.iqScore,
       iqScore: creator.iqScore,
     };
@@ -183,18 +186,24 @@ export default function SearchResultsGrid({
               <div>
                 <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600, letterSpacing: '0.05em' }}>FOLLOWERS</div>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>
-                  {creator.followerCount >= 1000000 
-                    ? `${(creator.followerCount / 1000000).toFixed(1)}M` 
-                    : `${(creator.followerCount / 1000).toFixed(0)}K`}
+                  {creator.followerCount != null 
+                    ? creator.followerCount >= 1000000 
+                      ? `${(creator.followerCount / 1000000).toFixed(1)}M` 
+                      : `${(creator.followerCount / 1000).toFixed(0)}K`
+                    : 'N/A'}
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600, letterSpacing: '0.05em' }}>ER</div>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>{creator.engagementRate}%</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>
+                  {creator.engagementRate != null ? `${creator.engagementRate}%` : 'N/A'}
+                </div>
               </div>
               <div>
                 <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 600, letterSpacing: '0.05em' }}>AUTH.</div>
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>{creator.authScore}</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>
+                  {creator.authScore != null ? creator.authScore : '—'}
+                </div>
               </div>
             </div>
 

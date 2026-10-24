@@ -37,3 +37,10 @@ supabase/.temp/
 
 # MiMo agent files
 .mimocode/
+
+# Local binaries and scratch files
+*.exe
+*.bundle
+BACKEND/
+New folder (2)/
+scratch/

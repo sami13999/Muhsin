@@ -50,6 +50,13 @@ export interface SQSClient {
     queueUrl: string;
     receiptHandle: string;
   }): Promise<void>;
+
+  /** Change message visibility timeout (visibility extension for long-running jobs) */
+  changeMessageVisibility?(params: {
+    queueUrl: string;
+    receiptHandle: string;
+    visibilityTimeout: number;
+  }): Promise<void>;
 }
 
 export interface EventHandler {
@@ -70,6 +77,7 @@ export interface ParsedEvent {
   causationId?: string;
   occurredAt: Date;
   payload: Record<string, unknown>;
+  receiptHandle?: string;
 }
 
 export interface WorkerMetrics {
@@ -262,6 +270,7 @@ export class EventWorker {
         causationId: body['causationId'] ?? body['causation_id'],
         occurredAt: new Date(body['occurredAt'] ?? body['occurred_at'] ?? Date.now()),
         payload: body['payload'] ?? body,
+        receiptHandle: message.receiptHandle,
       };
     } catch {
       return null;

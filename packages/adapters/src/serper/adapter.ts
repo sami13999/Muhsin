@@ -97,16 +97,39 @@ async function withRetry<T>(
   fn: () => Promise<T>,
   maxAttempts = 3,
   baseDelayMs = 200,
+  signal?: AbortSignal,
 ): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (signal?.aborted) {
+      const err = new Error('Serper operation aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
     try {
       return await fn();
     } catch (err) {
+      if (signal?.aborted || (err as any)?.name === 'AbortError') {
+        throw err;
+      }
       lastError = err;
       if (attempt < maxAttempts - 1) {
         const delay = baseDelayMs * 2 ** attempt + Math.random() * 100;
-        await new Promise((r) => setTimeout(r, delay));
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(resolve, delay);
+          if (signal) {
+            signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timeout);
+                const abortErr = new Error('Serper operation aborted');
+                abortErr.name = 'AbortError';
+                reject(abortErr);
+              },
+              { once: true },
+            );
+          }
+        });
       }
     }
   }
@@ -130,9 +153,15 @@ export class SerperAdapter {
     country?: string;
     language?: string;
     numResults?: number;
+    signal?: AbortSignal;
   }): Promise<SerperSearchResult[]> {
     if (isCircuitOpen()) {
       throw new Error('Serper circuit breaker open');
+    }
+    if (options?.signal?.aborted) {
+      const err = new Error('Serper search aborted');
+      err.name = 'AbortError';
+      throw err;
     }
 
     try {
@@ -149,15 +178,41 @@ export class SerperAdapter {
             hl: options?.language ?? 'en',
             num: options?.numResults ?? 10,
           }),
+          signal: options?.signal,
         });
 
         if (!res.ok) {
           const body = await res.text();
+          if (res.status === 400 && body.includes('Query pattern not allowed')) {
+            const fallbackQuery = query
+              .replace(/site:([a-zA-Z0-9_-]+)\.[a-z]{2,}/gi, '$1')
+              .replace(/\s+/g, ' ')
+              .trim();
+            if (fallbackQuery && fallbackQuery !== query) {
+              const retryRes = await fetch('https://google.serper.dev/search', {
+                method: 'POST',
+                headers: {
+                  'X-API-KEY': this.config.apiKey,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  q: fallbackQuery,
+                  gl: options?.country ?? 'us',
+                  hl: options?.language ?? 'en',
+                  num: options?.numResults ?? 10,
+                }),
+                signal: options?.signal,
+              });
+              if (retryRes.ok) {
+                return retryRes.json() as Promise<SerperResponse>;
+              }
+            }
+          }
           throw new Error(`Serper API error: ${res.status} ${body}`);
         }
 
         return res.json() as Promise<SerperResponse>;
-      });
+      }, 3, 200, options?.signal);
 
       recordSuccess();
       return result.organic ?? [];

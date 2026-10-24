@@ -16,9 +16,15 @@ export {
   createTimelineWriterHandler,
   createFeedbackProcessorHandler,
   createBillingStateHandler,
+  createCreatorErasureHandler,
 } from './handlers/index.js';
 
 export {
   runCreditGrantJob,
   runReservationSweeper,
 } from './jobs/index.js';
+
+export {
+  buildWorkers,
+  type WorkerPoolConfig,
+} from './bootstrap.js';

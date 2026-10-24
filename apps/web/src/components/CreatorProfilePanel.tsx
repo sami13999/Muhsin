@@ -9,15 +9,15 @@ export interface CreatorProfileData {
   displayName: string;
   primaryHandle: string;
   platform: string;
-  followerCount: number;
-  engagementRate: number;
-  city: string;
-  niche: string;
-  iqScore: number;
+  followerCount: number | null;
+  engagementRate: number | null;
+  city: string | null;
+  niche: string | null;
+  iqScore: number | null;
   verified?: boolean;
-  avatarUrl?: string;
-  bio?: string;
-  canonicalUrl?: string;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  canonicalUrl?: string | null;
 }
 
 interface CreatorProfilePanelProps {
@@ -53,11 +53,11 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose }: Cre
     displayName: creator?.displayName || 'Pakistani Creator',
     primaryHandle: creator?.primaryHandle || '@creator',
     platform: creator?.platform || 'instagram',
-    followerCount: creator?.followerCount || 250000,
-    engagementRate: creator?.engagementRate || 6.5,
+    followerCount: creator?.followerCount ?? 250000,
+    engagementRate: creator?.engagementRate ?? 6.5,
     city: creator?.city || 'Lahore',
     niche: creator?.niche || 'Lifestyle',
-    iqScore: creator?.iqScore || 92,
+    iqScore: creator?.iqScore ?? 92,
     verified: creator?.verified !== undefined ? creator.verified : true,
     avatarUrl: creator?.avatarUrl,
     bio: creator?.bio,
@@ -74,26 +74,27 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose }: Cre
   if (!creatorId && !creator) return null;
 
   // Format counts cleanly (e.g. 412K, 3.4M)
-  const formatCount = (num: number) => {
+  const formatCount = (num: number | null | undefined) => {
+    if (num == null) return '—';
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
     if (num >= 1000) return `${(num / 1000).toFixed(0)}K`;
     return String(num);
   };
 
   // Derive realistic analytics based on creator's actual metrics
-  const followers = profile.followerCount || 412000;
-  const engRate = profile.engagementRate || 5.2;
-  const iqScore = profile.iqScore || 89;
+  const followers = profile.followerCount;
+  const engRate = profile.engagementRate;
+  const iqScore = profile.iqScore ?? 89;
 
   // Real calculated engagement averages
-  const avgLikesNum = Math.round(followers * (engRate / 100) * 0.94);
-  const avgCommentsNum = Math.round(avgLikesNum * 0.045);
-  const postCount = Math.max(180, Math.round((followers / 10000) * 1.8 + 210));
-  const estimatedCpe = Math.max(25, Math.min(85, Math.round(75 - engRate * 3.5)));
+  const avgLikesNum = (followers != null && engRate != null) ? Math.round(followers * (engRate / 100) * 0.94) : null;
+  const avgCommentsNum = avgLikesNum != null ? Math.round(avgLikesNum * 0.045) : null;
+  const postCount = followers != null ? Math.max(180, Math.round((followers / 10000) * 1.8 + 210)) : null;
+  const estimatedCpe = engRate != null ? Math.max(25, Math.min(85, Math.round(75 - engRate * 3.5))) : null;
 
   // Authenticity breakdown percentages matching UI
   const authenticityScore = 92;
-  const engagementQualityScore = Math.min(95, Math.max(55, Math.round(engRate * 8.5 + 15)));
+  const engagementQualityScore = engRate != null ? Math.min(95, Math.max(55, Math.round(engRate * 8.5 + 15))) : 80;
   const contentConsistencyScore = 82;
   const brandSafetyScore = 94;
 
@@ -309,11 +310,11 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose }: Cre
                   </span>
                   <span style={{ color: '#cbd5e1' }}>•</span>
                   <span style={{ fontSize: '12px', color: '#64748b' }}>
-                    📍 {profile.city}, Pakistan
+                    📍 {profile.city || 'Unknown'}, Pakistan
                   </span>
                   <span style={{ color: '#cbd5e1' }}>•</span>
                   <span style={{ fontSize: '12px', color: '#64748b' }}>
-                    {profile.niche}
+                    {profile.niche || 'General'}
                   </span>
                 </div>
 
@@ -603,7 +604,7 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose }: Cre
                       POSTS
                     </div>
                     <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
-                      {postCount}
+                      {postCount != null ? postCount : '—'}
                     </div>
                   </div>
 
@@ -613,7 +614,7 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose }: Cre
                       ENG. RATE
                     </div>
                     <div style={{ fontSize: '22px', fontWeight: 700, color: '#10b981', marginTop: '2px' }}>
-                      {engRate.toFixed(1)}%
+                      {engRate != null ? `${engRate.toFixed(1)}%` : '—'}
                     </div>
                   </div>
 
@@ -643,7 +644,7 @@ export default function CreatorProfilePanel({ creatorId, creator, onClose }: Cre
                       EST. CPE
                     </div>
                     <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
-                      Rs. {estimatedCpe}
+                      {estimatedCpe != null ? `Rs. ${estimatedCpe}` : '—'}
                     </div>
                   </div>
                 </div>

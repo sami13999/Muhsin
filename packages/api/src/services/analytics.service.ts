@@ -79,6 +79,10 @@ export class AnalyticsService {
     this.db = db;
   }
 
+  withDb(db: Database): AnalyticsService {
+    return new AnalyticsService(db);
+  }
+
   /**
    * Get workspace analytics for a period.
    */

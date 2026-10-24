@@ -108,8 +108,9 @@ CREATE INDEX idx_profile_enrichment_status
     ON gcp.profile (enrichment_status, enriched_at)
     WHERE enrichment_status IN ('stale', 'pending', 'failed');
 
-CREATE INDEX idx_profile_index_pending
-    ON gcp.profile (index_pending)
+-- Re-indexing queue (PATCH-009, ADR-027, indexed on creator)
+CREATE INDEX IF NOT EXISTS idx_creator_index_pending
+    ON gcp.creator (index_pending)
     WHERE index_pending = TRUE;
 
 CREATE INDEX idx_profile_yt_ratio

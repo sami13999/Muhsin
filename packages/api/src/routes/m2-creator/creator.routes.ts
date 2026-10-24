@@ -72,7 +72,8 @@ export function createM2Routes(db: Database, meilisearch: MeilisearchAdapter) {
       );
     }
 
-    const result = await creatorRepo.findById(db, creatorId);
+    const clientDb = c.get('db') ?? db;
+    const result = await creatorRepo.findById(clientDb, creatorId);
     if (!result) {
       return c.json(
         {
@@ -123,8 +124,9 @@ export function createM2Routes(db: Database, meilisearch: MeilisearchAdapter) {
       );
     }
 
+    const clientDb = c.get('db') ?? db;
     const { page, limit, ...filters } = parsed.data;
-    const result = await creatorRepo.list(db, filters, page, limit);
+    const result = await creatorRepo.list(clientDb, filters, page, limit);
 
     return c.json({
       data: result.data.map((r: CreatorWithRelations) => ({
@@ -167,8 +169,10 @@ export function createM2Routes(db: Database, meilisearch: MeilisearchAdapter) {
 
     const input = parsed.data;
 
+    const clientDb = c.get('db') ?? db;
+
     // Check for duplicate by handle + platform
-    const existing = await creatorRepo.findByHandle(db, input.handle, input.platform);
+    const existing = await creatorRepo.findByHandle(clientDb, input.handle, input.platform);
     if (existing) {
       return c.json(
         {
@@ -184,7 +188,7 @@ export function createM2Routes(db: Database, meilisearch: MeilisearchAdapter) {
     }
 
     // Create creator + profile
-    const created = await creatorRepo.create(db, input);
+    const created = await creatorRepo.create(clientDb, input);
 
     // ADR-027: Synchronous projection to Meilisearch (NOT in the Postgres transaction)
     // If Meilisearch is down, creator still gets created in GCP. Projection is deferred.

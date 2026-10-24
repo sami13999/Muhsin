@@ -75,8 +75,10 @@ export function createM1Routes(db: Database) {
 
     const input = parsed.data;
 
+    const clientDb = c.get('db') ?? db;
+
     // Check slug uniqueness
-    const existing = await workspaceRepository.findBySlug(db, input.slug);
+    const existing = await workspaceRepository.findBySlug(clientDb, input.slug);
     if (existing) {
       return c.json(
         {
@@ -90,7 +92,7 @@ export function createM1Routes(db: Database) {
       );
     }
 
-    const result = await workspaceRepository.create(db, {
+    const result = await workspaceRepository.create(clientDb, {
       ...input,
       ownerId: userId,
     });
@@ -129,7 +131,8 @@ export function createM1Routes(db: Database) {
       );
     }
 
-    const results = await workspaceRepository.listUserWorkspaces(db, userId);
+    const clientDb = c.get('db') ?? db;
+    const results = await workspaceRepository.listUserWorkspaces(clientDb, userId);
 
     return c.json({
       data: results.map((r) => ({
@@ -153,7 +156,8 @@ export function createM1Routes(db: Database) {
     const requestId = c.get('requestId');
     const workspaceId = c.req.param('id');
 
-    const result = await workspaceRepository.findById(db, workspaceId);
+    const clientDb = c.get('db') ?? db;
+    const result = await workspaceRepository.findById(clientDb, workspaceId);
     if (!result) {
       return c.json(
         {
@@ -215,7 +219,8 @@ export function createM1Routes(db: Database) {
       );
     }
 
-    const result = await workspaceRepository.update(db, workspaceId, parsed.data);
+    const clientDb = c.get('db') ?? db;
+    const result = await workspaceRepository.update(clientDb, workspaceId, parsed.data);
     if (!result) {
       return c.json(
         {
@@ -282,8 +287,9 @@ export function createM1Routes(db: Database) {
 
     // For now, we accept email and create a pending membership
     // In Sprint 5 Track B, this will send an invitation email
+    const clientDb = c.get('db') ?? db;
     const member = await workspaceRepository.addMember(
-      db,
+      clientDb,
       workspaceId,
       crypto.randomUUID(), // Placeholder user ID until auth integration
       role,
@@ -322,7 +328,8 @@ export function createM1Routes(db: Database) {
       );
     }
 
-    await workspaceRepository.removeMember(db, membershipId);
+    const clientDb = c.get('db') ?? db;
+    await workspaceRepository.removeMember(clientDb, membershipId);
 
     return c.body(null, 204);
   });

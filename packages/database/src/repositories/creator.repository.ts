@@ -272,7 +272,15 @@ export async function create(
     enrichmentSource: 'user_submitted',
   });
 
-  return findById(db, creatorRow.creatorId) as Promise<CreatorWithRelations>;
+  const found = await findById(db, creatorRow.creatorId);
+  if (found) return found;
+
+  return {
+    creator: creatorRow,
+    profiles: [],
+    enrichmentSnapshots: [],
+    nicheClassifications: [],
+  };
 }
 
 /**
@@ -454,6 +462,7 @@ export async function eraseCreator(
     .set({
       displayName: '[ERASED]',
       primaryHandle: '[ERASED]',
+      piiErasedAt: new Date(),
     })
     .where(eq(creator.creatorId, creatorId));
 

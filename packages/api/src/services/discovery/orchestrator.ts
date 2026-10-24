@@ -38,6 +38,7 @@ export interface DiscoveryJob {
   executionStats?: ExecutionStats;
   createdAt: Date;
   completedAt?: Date;
+  signal?: AbortSignal;
 }
 
 export interface DiscoveryResult {
@@ -55,6 +56,7 @@ export interface DiscoveryResult {
   isLive?: boolean;
   confidence: number;
   source: 'serper' | 'apify' | 'llm';
+  scrapeFailureReason?: string;
 }
 
 export interface PipelineStages {
@@ -156,7 +158,17 @@ export class DiscoveryOrchestrator {
    * 4. Apify Scraper Grid for brand-new handles
    * 5. Quality scoring, Postgres persistence, and Brain 1 Meilisearch sync
    */
-  async discover(job: DiscoveryJob): Promise<DiscoveryResult[]> {
+  async discover(job: DiscoveryJob, signal?: AbortSignal): Promise<DiscoveryResult[]> {
+    const activeSignal = signal ?? job.signal;
+    const checkAborted = () => {
+      if (activeSignal?.aborted) {
+        const err = new Error('Discovery operation cancelled');
+        err.name = 'AbortError';
+        throw err;
+      }
+    };
+
+    checkAborted();
     const startTime = Date.now();
     job.status = 'searching';
 
@@ -174,30 +186,41 @@ export class DiscoveryOrchestrator {
     };
 
     // Stage 1: AI Query Expansion & Serper Scan
-    const searchQueries = await this.buildSearchQueries(job);
+    checkAborted();
+    const searchQueries = await this.buildSearchQueries(job, activeSignal);
+    checkAborted();
     stages.aiQueryExpansion = searchQueries;
     stages.serperQueriesExecuted = searchQueries.length;
 
-    const rawSearchResults = await this.searchStage(searchQueries);
+    const rawSearchResults = await this.searchStage(searchQueries, activeSignal);
+    checkAborted();
     await this.emitStageEvent(job, 'search_completed', rawSearchResults.length);
 
     // Stage 2: The Bouncer (Relevance + Profile URL + Intra-batch + Local DB check)
+    checkAborted();
     const filteredCandidates = await this.bouncerFilter(rawSearchResults, stages);
+    checkAborted();
     await this.emitStageEvent(job, 'deduplication_completed', filteredCandidates.length);
 
     // Stage 3: Apify Profile Scraping for truly brand-new candidates
+    checkAborted();
     job.status = 'scraping';
-    const scrapeResults = await this.scrapeStage(job, filteredCandidates);
+    const scrapeResults = await this.scrapeStage(job, filteredCandidates, activeSignal);
+    checkAborted();
     stages.apifyUrlsScraped = scrapeResults.length;
     await this.emitStageEvent(job, 'scrape_completed', scrapeResults.length);
 
     // Stage 4: Quality Check & AI Extraction / Scoring
+    checkAborted();
     job.status = 'extracting';
-    const extractedResults = await this.extractionStage(job, scrapeResults);
+    const extractedResults = await this.extractionStage(job, scrapeResults, activeSignal);
+    checkAborted();
     await this.emitStageEvent(job, 'extraction_completed', extractedResults.length);
 
     // Stage 5: Postgres Database Persistence & Brain 1 Meilisearch Sync
-    const persistedResults = await this.persistToDatabase(job, extractedResults);
+    checkAborted();
+    const persistedResults = await this.persistToDatabase(job, extractedResults, activeSignal);
+    checkAborted();
     stages.creatorsPersistedDb = persistedResults.length;
 
     // Execution Stats
@@ -221,59 +244,70 @@ export class DiscoveryOrchestrator {
 
   // ── Stage 1: Groq AI Query Expansion & Serper Scan ─────────
 
-  private async buildSearchQueries(job: DiscoveryJob): Promise<string[]> {
+  private async buildSearchQueries(job: DiscoveryJob, signal?: AbortSignal): Promise<string[]> {
     const basePrompt = job.query;
 
     try {
+      if (signal?.aborted) throw new Error('Search queries generation aborted');
+
       const systemPrompt = `You are an expert Google Search query engineer for finding social media creators (influencers) on Instagram, TikTok, YouTube.
 Convert the user request into 3 to 5 targeted Google search query formulas.
 User prompt: "${basePrompt}"
 Platform constraint: ${job.platform || 'all'}
 Niche constraint: ${job.niche || 'any'}
 
-Generate specific Google search operators like:
-site:instagram.com "location" "niche keyword"
-site:tiktok.com "location" "creator keyword"
-site:youtube.com "location" "channel keyword"
+Generate specific Google search query terms (avoiding restricted site: operators) like:
+instagram "location" "niche keyword" profile
+tiktok "location" "creator keyword"
+youtube "channel keyword" "location"
 
-Return JSON with format: { "searchQueries": ["site:...", "site:..."] }`;
+Return JSON with format: { "searchQueries": ["...", "..."] }`;
 
       const llmRes = await this.llm.call(
         this.config.llmTier,
         systemPrompt,
         basePrompt,
         queryExpansionSchema,
+        { signal },
       );
 
       if (llmRes.success && llmRes.data.searchQueries.length > 0) {
         return llmRes.data.searchQueries;
       }
     } catch (err) {
+      if (signal?.aborted || (err as any)?.name === 'AbortError') {
+        throw err;
+      }
       console.warn('[Discovery] Groq query expansion fallback:', err);
     }
 
     // Default template formulas
     const platform = job.platform && job.platform !== 'all' ? job.platform : null;
     if (platform) {
-      return [`site:${platform}.com ${basePrompt}`];
+      return [`${basePrompt} ${platform} profile`];
     }
     return [
-      `site:instagram.com ${basePrompt}`,
-      `site:tiktok.com ${basePrompt}`,
-      `site:youtube.com ${basePrompt}`,
+      `${basePrompt} instagram profile`,
+      `${basePrompt} tiktok profile`,
+      `${basePrompt} youtube channel`,
     ];
   }
 
-  private async searchStage(queries: string[]): Promise<DiscoveryResult[]> {
+  private async searchStage(queries: string[], signal?: AbortSignal): Promise<DiscoveryResult[]> {
     const allHits: SerperSearchResult[] = [];
 
     for (const q of queries) {
+      if (signal?.aborted) break;
       try {
         const hits = await this.serper.search(q, {
           numResults: Math.ceil(this.config.maxResults / queries.length) + 5,
+          signal,
         });
         allHits.push(...hits);
       } catch (err) {
+        if (signal?.aborted || (err as any)?.name === 'AbortError') {
+          throw err;
+        }
         console.warn(`[Discovery] Serper search failed for query "${q}":`, err);
       }
     }
@@ -379,71 +413,90 @@ Return JSON with format: { "searchQueries": ["site:...", "site:..."] }`;
   private async scrapeStage(
     job: DiscoveryJob,
     searchResults: DiscoveryResult[],
+    signal?: AbortSignal,
   ): Promise<DiscoveryResult[]> {
     const results: DiscoveryResult[] = [];
     const urlsToScrape = searchResults.slice(0, 10);
 
     for (const result of urlsToScrape) {
+      if (signal?.aborted) break;
       try {
         const actorId = this.getActorForPlatform(result.platform);
         if (!actorId) {
-          results.push(this.enrichFallbackCandidate(result));
+          // No scraper actor available for platform: keep discovered search hit with unverified status
+          results.push({
+            ...result,
+            verified: false,
+            isLive: false,
+            confidence: 0.5,
+            source: 'serper' as const,
+            scrapeFailureReason: 'unsupported_platform',
+          });
           continue;
         }
 
         const items = await this.apify.runActor(
           actorId,
           { urls: [result.url] },
-          { timeoutSecs: this.config.scrapeTimeout },
+          { timeoutSecs: this.config.scrapeTimeout, signal },
         );
 
         if (items && items.length > 0) {
           const scraped = items[0]!;
+          const rawFollowers = scraped['followerCount'] ?? scraped['followersCount'];
+          const parsedFollowers =
+            typeof rawFollowers === 'number' && Number.isFinite(rawFollowers)
+              ? Math.max(0, Math.round(rawFollowers))
+              : undefined;
+
+          const rawEngagement = scraped['engagementRate'];
+          const parsedEngagement =
+            typeof rawEngagement === 'number' && Number.isFinite(rawEngagement)
+              ? Number(rawEngagement.toFixed(2))
+              : undefined;
+
           results.push({
             ...result,
             handle: (scraped['handle'] as string) ?? result.handle,
             displayName: (scraped['displayName'] as string) ?? result.displayName,
-            followerCount: Number(scraped['followerCount'] ?? 150000),
-            engagementRate: Number(scraped['engagementRate'] ?? 5.2),
-            niche: (scraped['niche'] as string) ?? result.niche ?? 'Lifestyle',
-            city: (scraped['city'] as string) ?? 'Karachi',
-            iqScore: 94,
-            verified: true,
-            isLive: true,
+            followerCount: parsedFollowers,
+            engagementRate: parsedEngagement,
+            niche: (scraped['niche'] as string) ?? result.niche,
+            city: (scraped['city'] as string) ?? result.city,
+            verified: Boolean(scraped['verified']),
+            isLive: parsedFollowers !== undefined,
             confidence: 0.9,
             source: 'apify' as const,
           });
         } else {
-          results.push(this.enrichFallbackCandidate(result));
+          // Scraping returned 0 items / empty dataset
+          results.push({
+            ...result,
+            verified: false,
+            isLive: false,
+            confidence: 0.5,
+            source: 'serper' as const,
+            scrapeFailureReason: 'empty_dataset',
+          });
         }
       } catch (err) {
-        console.warn(`[Discovery] Apify scrape fallback for ${result.url}:`, err);
-        results.push(this.enrichFallbackCandidate(result));
+        if (signal?.aborted || (err as any)?.name === 'AbortError') {
+          throw err;
+        }
+        const safeReason = err instanceof Error ? err.message : 'Unknown scrape error';
+        console.warn(`[Discovery] Apify scrape failed for ${result.url}:`, safeReason);
+        results.push({
+          ...result,
+          verified: false,
+          isLive: false,
+          confidence: 0.4,
+          source: 'serper' as const,
+          scrapeFailureReason: 'scraper_error',
+        });
       }
     }
 
     return results;
-  }
-
-  private enrichFallbackCandidate(result: DiscoveryResult): DiscoveryResult {
-    const handleClean = (result.handle || '@creator').replace(/^@/, '');
-    const formattedName =
-      result.displayName && !result.displayName.includes('http')
-        ? result.displayName.split('-')[0]?.split('|')[0]?.trim() || handleClean
-        : handleClean;
-
-    return {
-      ...result,
-      displayName: formattedName,
-      followerCount: result.followerCount || Math.floor(100000 + Math.random() * 400000),
-      engagementRate: result.engagementRate || Number((4.0 + Math.random() * 4.5).toFixed(1)),
-      niche: result.niche || 'Lifestyle',
-      city: result.city || 'Lahore',
-      iqScore: 91,
-      verified: true,
-      isLive: true,
-      confidence: 0.85,
-    };
   }
 
   // ── Stage 4: AI Quality Check & Extraction ──────────────────
@@ -451,10 +504,12 @@ Return JSON with format: { "searchQueries": ["site:...", "site:..."] }`;
   private async extractionStage(
     job: DiscoveryJob,
     scrapeResults: DiscoveryResult[],
+    signal?: AbortSignal,
   ): Promise<DiscoveryResult[]> {
     const results: DiscoveryResult[] = [];
 
     for (const result of scrapeResults) {
+      if (signal?.aborted) break;
       try {
         if (!result.handle && !result.displayName) continue;
 
@@ -463,24 +518,38 @@ Return JSON with format: { "searchQueries": ["site:...", "site:..."] }`;
           'Extract creator details. Return JSON matching: handle, displayName, platform, niche, followerCount, engagementRate, city',
           JSON.stringify(result),
           extractionSchema,
+          { signal },
         );
 
         if (extraction.success) {
           const extracted = extraction.data as Record<string, unknown>;
+          const extractedFollowers =
+            typeof extracted['followerCount'] === 'number' && Number.isFinite(extracted['followerCount'])
+              ? Math.max(0, Math.round(extracted['followerCount']))
+              : result.followerCount;
+
+          const extractedEngagement =
+            typeof extracted['engagementRate'] === 'number' && Number.isFinite(extracted['engagementRate'])
+              ? Number(Number(extracted['engagementRate']).toFixed(2))
+              : result.engagementRate;
+
           results.push({
             ...result,
             handle: (extracted['handle'] as string) ?? result.handle,
             displayName: (extracted['displayName'] as string) ?? result.displayName,
-            niche: (extracted['niche'] as string) ?? result.niche ?? 'Lifestyle',
-            followerCount: (extracted['followerCount'] as number) ?? result.followerCount ?? 150000,
-            engagementRate: (extracted['engagementRate'] as number) ?? result.engagementRate ?? 5.2,
-            city: (extracted['city'] as string) ?? result.city ?? 'Karachi',
+            niche: (extracted['niche'] as string) ?? result.niche,
+            followerCount: extractedFollowers,
+            engagementRate: extractedEngagement,
+            city: (extracted['city'] as string) ?? result.city,
             confidence: 0.95,
           });
         } else {
           results.push(result);
         }
-      } catch {
+      } catch (err) {
+        if (signal?.aborted || (err as any)?.name === 'AbortError') {
+          throw err;
+        }
         results.push(result);
       }
     }
@@ -493,30 +562,60 @@ Return JSON with format: { "searchQueries": ["site:...", "site:..."] }`;
   private async persistToDatabase(
     job: DiscoveryJob,
     results: DiscoveryResult[],
+    signal?: AbortSignal,
   ): Promise<DiscoveryResult[]> {
     const persisted: DiscoveryResult[] = [];
 
     for (const res of results) {
+      if (signal?.aborted) break;
       if (!res.handle) continue;
       const platform = (res.platform || 'instagram') as 'instagram' | 'tiktok' | 'youtube' | 'twitter' | 'facebook';
 
       try {
-        // Create creator record in Postgres DB
-        const created = await creatorRepository.create(this.db, {
-          name: res.displayName || res.handle.replace(/^@/, ''),
-          handle: res.handle,
-          platform,
-          canonicalUrl: res.url,
-          followerCount: res.followerCount || 100000,
-          completenessTier: 'standard',
-        });
+        let creatorId: string | undefined;
 
-        const creatorId = created.creator.creatorId;
+        // Check if creator already exists in GCP database (ADR-029 Deduplication & GDPR check)
+        const existing = await creatorRepository.findByHandle(this.db, res.handle, platform);
+
+        if (existing) {
+          // Rule 5: GDPR erasure must never be undone by discovery replay
+          if (
+            existing.creator.piiErasedAt != null ||
+            existing.creator.displayName === '[ERASED]' ||
+            existing.creator.primaryHandle === '[ERASED]'
+          ) {
+            console.warn(`[Discovery] Skipping GDPR-erased creator ${res.handle}`);
+            continue;
+          }
+
+          creatorId = existing.creator.creatorId;
+
+          // Update truthful metrics if new follower count gathered from scraper
+          const existingProfile = existing.profiles.find((p) => p.platform === platform);
+          if (existingProfile && res.followerCount !== undefined && res.followerCount !== null) {
+            await creatorRepository.updateProfile(this.db, existingProfile.profileId, {
+              followerCount: res.followerCount,
+              payloadCompletenessTier: res.source === 'apify' && res.followerCount ? 'standard' : existingProfile.payloadCompletenessTier,
+            });
+          }
+        } else {
+          // Create new creator record in Postgres DB (truthful metrics, never fabricated)
+          const created = await creatorRepository.create(this.db, {
+            name: res.displayName || res.handle.replace(/^@/, ''),
+            handle: res.handle,
+            platform,
+            canonicalUrl: res.url,
+            followerCount: res.followerCount,
+            completenessTier: res.source === 'apify' && res.followerCount ? 'standard' : 'minimal',
+          });
+          creatorId = created?.creator?.creatorId;
+        }
+
         const resWithId: DiscoveryResult = { ...res, creatorId };
         persisted.push(resWithId);
 
         // Synchronously project to Brain 1 Meilisearch Index if available
-        if (this.meilisearch) {
+        if (this.meilisearch && creatorId) {
           try {
             const meili = this.meilisearch;
             await projectCreatorToIndex(creatorId, this.db, {
@@ -569,9 +668,8 @@ Return JSON with format: { "searchQueries": ["site:...", "site:..."] }`;
   private getActorForPlatform(platform: string): string | null {
     const actors: Record<string, string> = {
       instagram: 'apify/instagram-scraper',
-      tiktok: 'apify/tiktok-scraper',
-      youtube: 'apify/youtube-scraper',
-      twitter: 'apify/twitter-scraper',
+      tiktok: 'clockworks/tiktok-profile-scraper',
+      youtube: 'streamers/youtube-channel-scraper',
     };
     return actors[platform] ?? null;
   }

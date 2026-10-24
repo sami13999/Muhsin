@@ -79,6 +79,10 @@ export class OutreachService {
     this.whatsAppAdapter = whatsAppAdapter ?? (typeof createWhatsAppAdapter === 'function' ? createWhatsAppAdapter() : ({} as any));
   }
 
+  withDb(db: Database): OutreachService {
+    return new OutreachService(db, this.emailAdapter ?? undefined, this.whatsAppAdapter);
+  }
+
   /**
    * Send an outreach message to a creator.
    * CRITICAL: Checks minor_signal before allowing send.

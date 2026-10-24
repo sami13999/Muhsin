@@ -29,6 +29,7 @@ const addMemberSchema = z.object({
 
 export function createCRMListRoutes(crm: CRMService): Hono {
   const routes = new Hono();
+  const getCrm = (c: any) => (c.get('db') ? crm.withDb(c.get('db')) : crm);
 
   /**
    * GET /lists
@@ -39,7 +40,7 @@ export function createCRMListRoutes(crm: CRMService): Hono {
     const workspaceId = tenancy?.workspaceId ?? 'ws-001';
     const requestId = c.get('requestId');
 
-    const lists = await crm.listLists(workspaceId);
+    const lists = await getCrm(c).listLists(workspaceId);
 
     return c.json({
       data: lists,
@@ -73,7 +74,7 @@ export function createCRMListRoutes(crm: CRMService): Hono {
       );
     }
 
-    const list = await crm.createList({
+    const list = await getCrm(c).createList({
       workspaceId,
       name: parsed.data.name,
       description: parsed.data.description,
@@ -95,7 +96,7 @@ export function createCRMListRoutes(crm: CRMService): Hono {
     const requestId = c.get('requestId');
     const listId = c.req.param('id');
 
-    const list = await crm.getList(listId);
+    const list = await getCrm(c).getList(listId);
     if (!list) {
       return c.json(
         {
@@ -141,7 +142,7 @@ export function createCRMListRoutes(crm: CRMService): Hono {
       );
     }
 
-    await crm.addListMember({
+    await getCrm(c).addListMember({
       listId,
       workspaceCreatorLinkId: parsed.data.workspaceCreatorLinkId,
       addedBy: userId,
@@ -162,7 +163,7 @@ export function createCRMListRoutes(crm: CRMService): Hono {
     const requestId = c.get('requestId');
     const memberId = c.req.param('memberId');
 
-    await crm.removeListMember(memberId);
+    await getCrm(c).removeListMember(memberId);
 
     return c.body(null, 204);
   });

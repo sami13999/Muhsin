@@ -148,7 +148,7 @@ describe('creditRepository', () => {
 
   describe('commitCredits', () => {
     it('should insert ledger entry and return current balance', async () => {
-      // commitCredits calls insertLedgerEntry (db.insert) then getBalance (db.select)
+      // commitCredits calls isLedgerActionApplied, insertLedgerEntry, then getBalance
       const mockDb = {
         $client: { sql: () => {} },
         insert: vi.fn().mockReturnValue({
@@ -168,7 +168,29 @@ describe('creditRepository', () => {
       expect(result.success).toBe(true);
       expect(result.newBalance).toBe(900n);
       expect(mockDb.insert).toHaveBeenCalledTimes(1);
-      expect(mockDb.select).toHaveBeenCalledTimes(1);
+      expect(mockDb.select).toHaveBeenCalled();
+    });
+
+    it('should be idempotent if already committed for referenceId', async () => {
+      const mockDb = {
+        $client: { sql: () => {} },
+        insert: vi.fn(),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn()
+                .mockResolvedValueOnce([{ entryId: 'led-committed-001' }]) // isLedgerActionApplied returns true
+                .mockResolvedValueOnce([{ balance: 900n, version: 2 }]), // getBalance
+            }),
+          }),
+        }),
+      };
+
+      const result = await creditRepo.commitCredits(mockDb as any, 'ws-001', 100n, 'discovery', 'job-001');
+
+      expect(result.success).toBe(true);
+      expect(result.newBalance).toBe(900n);
+      expect(mockDb.insert).not.toHaveBeenCalled();
     });
   });
 
@@ -190,6 +212,57 @@ describe('creditRepository', () => {
       expect(result.newBalance).toBe(1000n);
       expect(mockDb.execute).toHaveBeenCalledTimes(2);
       expect(mockDb.insert).toHaveBeenCalledTimes(1);
+    });
+
+    it('should be idempotent if already released for referenceId', async () => {
+      const mockDb = {
+        $client: { sql: () => {} },
+        execute: vi.fn(),
+        insert: vi.fn(),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn()
+                .mockResolvedValueOnce([{ entryId: 'led-released-001' }]) // isLedgerActionApplied returns true
+                .mockResolvedValueOnce([{ balance: 1000n, version: 2 }]), // getBalance
+            }),
+          }),
+        }),
+      };
+
+      const result = await creditRepo.releaseCredits(mockDb as any, 'ws-001', 100n, 'discovery', 'job-001');
+
+      expect(result.success).toBe(true);
+      expect(result.newBalance).toBe(1000n);
+      expect(mockDb.execute).not.toHaveBeenCalled();
+      expect(mockDb.insert).not.toHaveBeenCalled();
+    });
+
+    it('should be idempotent under lock if concurrent worker released while waiting for SELECT FOR UPDATE', async () => {
+      const mockDb = {
+        $client: { sql: () => {} },
+        execute: vi.fn()
+          .mockResolvedValueOnce([{ balance: 1000n, version: 2 }]), // SELECT FOR UPDATE
+        insert: vi.fn(),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn()
+                .mockResolvedValueOnce([]) // First check before lock: not yet released
+                .mockResolvedValueOnce([{ entryId: 'led-released-concurrent' }]), // Second check under lock: now released!
+            }),
+          }),
+        }),
+      };
+
+      const result = await creditRepo.releaseCredits(mockDb as any, 'ws-001', 100n, 'discovery', 'job-001');
+
+      expect(result.success).toBe(true);
+      expect(result.newBalance).toBe(1000n);
+      expect(result.version).toBe(2);
+      // Under lock, it detected the concurrent release and skipped UPDATE & INSERT!
+      expect(mockDb.execute).toHaveBeenCalledTimes(1); // Only the SELECT FOR UPDATE, no UPDATE
+      expect(mockDb.insert).not.toHaveBeenCalled();
     });
   });
 

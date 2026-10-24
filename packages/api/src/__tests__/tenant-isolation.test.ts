@@ -19,6 +19,9 @@ vi.mock('@mushin/database', () => ({
     getMembership: vi.fn(),
     findById: vi.fn(),
   },
+  withWorkspaceTransaction: vi.fn(async (db, workspaceId, fn) => {
+    return await fn(db);
+  }),
 }));
 
 import { jwtVerify } from 'jose';

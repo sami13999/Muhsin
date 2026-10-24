@@ -72,6 +72,10 @@ export class CRMService {
     this.db = db;
   }
 
+  withDb(db: Database): CRMService {
+    return new CRMService(db);
+  }
+
   // ── Lists ──────────────────────────────────────────────────
 
   /**

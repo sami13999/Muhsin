@@ -22,14 +22,16 @@ const TRENDING_SORT_ENABLED = process.env['TRENDING_SORT_ENABLED'] !== 'false';
 // ── Filter Schema (Doc 15 B3 — all filterable attributes) ────
 
 const baseFiltersSchema = z.object({
+  q: z.string().max(500, 'Search query must not exceed 500 characters').optional(),
+  query: z.string().max(500, 'Search query must not exceed 500 characters').optional(),
   platform: z.enum(['instagram', 'tiktok', 'youtube', 'twitter', 'facebook']).optional(),
   follower_min: z.coerce.number().int().min(0).optional(),
   follower_max: z.coerce.number().int().min(0).optional(),
   engagement_rate_min: z.coerce.number().min(0).max(1).optional(),
   engagement_rate_max: z.coerce.number().min(0).max(1).optional(),
-  geo: z.string().optional(),
-  language: z.string().optional(),
-  niche: z.string().optional(),
+  geo: z.string().regex(/^[a-zA-Z0-9\s\-_]+$/, 'Invalid geo filter').max(100).optional(),
+  language: z.string().regex(/^[a-zA-Z0-9\-_]+$/, 'Invalid language filter').max(50).optional(),
+  niche: z.string().regex(/^[a-zA-Z0-9\s\-_]+$/, 'Invalid niche filter').max(100).optional(),
   authenticity_band: z.enum(['strong', 'moderate', 'weak']).optional(),
   audience_pk_share_min: z.coerce.number().min(0).max(1).optional(),
   audience_gcc_share_min: z.coerce.number().min(0).max(1).optional(),
@@ -42,8 +44,8 @@ const demographicFiltersSchema = DEMOGRAPHIC_FILTERS_ENABLED
       audience_male_percent_min: z.coerce.number().min(0).max(100).optional(),
       audience_age_band: z.enum(['18-24', '25-34', '35-44', '45+']).optional(),
       audience_age_band_min: z.coerce.number().min(0).max(1).optional(),
-      audience_city: z.string().optional(),
-      audience_country: z.string().optional(),
+      audience_city: z.string().regex(/^[a-zA-Z0-9\s\-_]+$/, 'Invalid city filter').max(100).optional(),
+      audience_country: z.string().regex(/^[a-zA-Z0-9\s\-_]+$/, 'Invalid country filter').max(100).optional(),
     })
   : z.object({});
 
@@ -122,7 +124,7 @@ export function createSearchRoutes(meilisearch: MeilisearchAdapter) {
    * Zero LLM tokens. Identical query + index state = identical results (FS-02.03).
    */
   routes.get('/search', async (c) => {
-    const tenancy = c.get('tenancy') as TenancyContext;
+    const tenancy = (c.get('tenancy') as TenancyContext) ?? {};
     const requestId = c.get('requestId');
 
     // Parse and validate filters
@@ -143,13 +145,21 @@ export function createSearchRoutes(meilisearch: MeilisearchAdapter) {
     }
 
     const filters = parsed.data;
+
+    // Canonical keyword resolution (Fix F-01):
+    // Prefer `q` as canonical parameter over `query`. Trim whitespace.
+    const rawKeyword = filters.q !== undefined ? filters.q : (filters.query ?? '');
+    const keyword = rawKeyword.trim();
+
     const offset = (filters.page - 1) * filters.limit;
     const meiliFilters = buildMeilisearchFilter(filters);
+    // When no filters exist, omit filter option entirely (Fix F-03)
+    const filterExpression = meiliFilters.length > 0 ? meiliFilters.join(' AND ') : undefined;
 
     // Query Meilisearch (Brain 1)
     const result = await meilisearch.search(
-      '',
-      meiliFilters.join(' AND '),
+      keyword,
+      filterExpression,
       filters.limit,
       offset,
     );
@@ -174,11 +184,26 @@ export function createSearchRoutes(meilisearch: MeilisearchAdapter) {
           total: 0,
           page: filters.page,
           limit: filters.limit,
-          meta: { request_id: requestId, degraded: true, reason: result.reason },
+          meta: {
+            request_id: requestId,
+            degraded: true,
+            reason: result.reason,
+            total_precision: 'exact',
+          },
         },
         200,
       );
     }
+
+    // In-memory guard against tombstoned creators (defense-in-depth).
+    // Note: CreatorIndexDocument is a public-data-only projection and does not store piiErasedAt.
+    // The authoritative GDPR safeguard is the Step 2B asynchronous deletion flow
+    // (CREATOR_ERASED event -> worker -> meilisearch.deleteDocument) and projection guards in M2/M5.
+    // Here we ensure any tombstoned document with '[ERASED]' markers is never exposed in results.
+    const activeHits = result.hits.filter((hit) => {
+      const h = hit as Record<string, unknown>;
+      return h['displayName'] !== '[ERASED]' && h['primaryHandle'] !== '[ERASED]';
+    });
 
     // Build ranking context with workspace geo for Pakistan boost
     const rankingCtx: RankingContext = {
@@ -188,14 +213,42 @@ export function createSearchRoutes(meilisearch: MeilisearchAdapter) {
 
     // Apply deterministic ranking (Doc 15 B3)
     const filterParams: Record<string, unknown> = { ...filters };
-    const ranked = rankHits(result.hits, filterParams, rankingCtx);
+    const ranked = rankHits(activeHits, filterParams, rankingCtx);
+
+    // Determine accurate matching count and total precision (Step 2C.1):
+    // In Meilisearch (v0.44.0), offset pagination (limit + offset) returns `estimatedTotalHits`.
+    // When finite pagination (page + hitsPerPage) or exhaustive counts are enabled, `totalHits` is returned.
+    // When total counts are unavailable:
+    // - On page 1 with fewer hits than limit, the page length is the exact total.
+    // - On later pages (or full first pages), `offset + ranked.length` is ONLY a lower bound
+    //   and is explicitly tagged as 'lower_bound' in meta so it is never misrepresented as the exact total.
+    let totalCount: number;
+    let totalPrecision: 'exact' | 'estimated' | 'lower_bound';
+
+    if (typeof result.totalHits === 'number') {
+      totalCount = result.totalHits;
+      totalPrecision = 'exact';
+    } else if (typeof result.estimatedTotalHits === 'number') {
+      totalCount = result.estimatedTotalHits;
+      totalPrecision = 'estimated';
+    } else if (filters.page === 1 && ranked.length < filters.limit) {
+      totalCount = ranked.length;
+      totalPrecision = 'exact';
+    } else {
+      totalCount = offset + ranked.length;
+      totalPrecision = 'lower_bound';
+    }
 
     return c.json({
       data: ranked,
-      total: ranked.length,
+      total: totalCount,
       page: filters.page,
       limit: filters.limit,
-      meta: { request_id: requestId },
+      meta: {
+        request_id: requestId,
+        total_precision: totalPrecision,
+        ...(totalPrecision === 'lower_bound' ? { is_lower_bound: true } : {}),
+      },
     });
   });
 

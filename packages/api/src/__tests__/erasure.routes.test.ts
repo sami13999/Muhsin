@@ -13,7 +13,16 @@ vi.mock('@mushin/database/repositories/creator.repository', () => ({
   isHandleBlocked: vi.fn(),
 }));
 
+vi.mock('@mushin/events', async () => {
+  const actual = await vi.importActual('@mushin/events');
+  return {
+    ...actual,
+    emitEvent: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 import * as creatorRepo from '@mushin/database/repositories/creator.repository';
+import { emitEvent, EVENT_TYPES } from '@mushin/events';
 import { createErasureRoutes } from '../routes/m2-creator/index.js';
 
 describe('GDPR Erasure Routes (TD-12)', () => {
@@ -67,6 +76,38 @@ describe('GDPR Erasure Routes (TD-12)', () => {
       const json = (await res.json()) as any;
       expect(json.status).toBe('completed');
       expect(json.creatorId).toBe('cr-456');
+      expect(json.searchIndexSync).toBe('pending');
+
+      // ADR-020 verification: emitEvent MUST be called with canonical creatorId
+      expect(emitEvent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          type: EVENT_TYPES.CREATOR_ERASED,
+          payload: expect.objectContaining({
+            creatorId: 'cr-456',
+            requestedBy: 'usr-admin-001',
+          }),
+        }),
+      );
+    });
+
+    it('should return already_erased status and NOT emit event if creator was already erased', async () => {
+      vi.mocked(creatorRepo.eraseCreator).mockResolvedValue('already_erased' as any);
+
+      const res = await app.request('/api/v1/creators/cr-456/erasure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: 'User explicitly submitted GDPR right to be forgotten request',
+          requestedBy: 'usr-admin-001',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.status).toBe('already_erased');
+      expect(json.creatorId).toBe('cr-456');
+      expect(emitEvent).not.toHaveBeenCalled();
     });
 
     it('should reject erasure request if reason is under 10 characters', async () => {
@@ -82,9 +123,10 @@ describe('GDPR Erasure Routes (TD-12)', () => {
       expect(res.status).toBe(400);
       const json = (await res.json()) as any;
       expect(json.error.code).toBe('VALIDATION_ERROR');
+      expect(emitEvent).not.toHaveBeenCalled();
     });
 
-    it('should return 404 if creator is not found', async () => {
+    it('should return 404 and NOT emit event if creator is not found', async () => {
       vi.mocked(creatorRepo.eraseCreator).mockResolvedValue('not_found' as any);
 
       const res = await app.request('/api/v1/creators/nonexistent/erasure', {
@@ -99,6 +141,52 @@ describe('GDPR Erasure Routes (TD-12)', () => {
       expect(res.status).toBe(404);
       const json = (await res.json()) as any;
       expect(json.error.code).toBe('NOT_FOUND');
+      expect(emitEvent).not.toHaveBeenCalled();
+    });
+
+    it('ATOMIC ROLLBACK: should rollback transaction and return 500 when outbox insertion fails after erasure update', async () => {
+      let transactionRolledBack = false;
+      const txMock = {
+        ...mockDb,
+        _isTx: true,
+      };
+
+      // Mock db.transaction to execute callback with txMock and catch rollback on failure
+      mockDb.transaction = vi.fn().mockImplementation(async (fn: any) => {
+        try {
+          return await fn(txMock);
+        } catch (err) {
+          transactionRolledBack = true;
+          throw err;
+        }
+      });
+
+      vi.mocked(creatorRepo.eraseCreator).mockImplementation(async (dbParam: any) => {
+        // Assert that eraseCreator was passed the exact same transaction object, not the outer db!
+        expect(dbParam).toBe(txMock);
+        return 'completed' as any;
+      });
+
+      // Simulate outbox insertion failure
+      vi.mocked(emitEvent).mockImplementation(async (txParam: any) => {
+        // Assert that emitEvent was passed the exact same transaction object!
+        expect(txParam).toBe(txMock);
+        throw new Error('Outbox write failure: constraint violation');
+      });
+
+      const res = await app.request('/api/v1/creators/cr-456/erasure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: 'User explicitly submitted GDPR right to be forgotten request',
+          requestedBy: 'usr-admin-001',
+        }),
+      });
+
+      expect(res.status).toBe(500);
+      const json = (await res.json()) as any;
+      expect(json.error.code).toBe('ERASURE_TRANSACTION_FAILED');
+      expect(transactionRolledBack).toBe(true);
     });
   });
 

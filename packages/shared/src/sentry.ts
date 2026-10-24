@@ -53,7 +53,7 @@ function redactBeforeSend(event: any): any {
 function redactString(value: string): string {
   let result = value;
   for (const deny of C1_DENYLIST) {
-    const regex = new RegExp(`${deny}[^\\s]*\\s*[=:]\\s*["']?([^"'\s,]+)["']?`, 'gi');
+    const regex = new RegExp(`${deny}[^\\s]*\\s*[=:]\\s*["']?([^"'\\s,]+)["']?`, 'gi');
     result = result.replace(regex, `${deny}=[REDACTED]`);
   }
   return result;

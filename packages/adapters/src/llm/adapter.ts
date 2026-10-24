@@ -51,7 +51,7 @@ interface ModelConfig {
 const MODEL_REGISTRY: Record<LLMTier, ModelConfig> = {
   'T-A': {
     provider: 'groq',
-    model: 'openai/gpt-oss-20b',
+    model: 'llama-3.1-8b-instant',
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
     maxTokens: 1024,
     costPerInputToken: 0.00000005,
@@ -59,7 +59,7 @@ const MODEL_REGISTRY: Record<LLMTier, ModelConfig> = {
   },
   'T-B': {
     provider: 'groq',
-    model: 'openai/gpt-oss-120b',
+    model: 'llama-3.3-70b-versatile',
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
     maxTokens: 4096,
     costPerInputToken: 0.00000059,
@@ -67,7 +67,7 @@ const MODEL_REGISTRY: Record<LLMTier, ModelConfig> = {
   },
   'T-C': {
     provider: 'anthropic',
-    model: 'claude-sonnet-4-5',
+    model: 'claude-3-5-sonnet-20241022',
     apiUrl: 'https://api.anthropic.com/v1/messages',
     maxTokens: 4096,
     costPerInputToken: 0.000003,
@@ -133,16 +133,39 @@ async function withRetry<T>(
   fn: () => Promise<T>,
   maxAttempts = 2,
   baseDelayMs = 500,
+  signal?: AbortSignal,
 ): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (signal?.aborted) {
+      const err = new Error('LLM operation aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
     try {
       return await fn();
     } catch (err) {
+      if (signal?.aborted || (err as any)?.name === 'AbortError') {
+        throw err;
+      }
       lastError = err;
       if (attempt < maxAttempts - 1) {
         const delay = baseDelayMs * 2 ** attempt + Math.random() * 200;
-        await new Promise((r) => setTimeout(r, delay));
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(resolve, delay);
+          if (signal) {
+            signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timeout);
+                const abortErr = new Error('LLM operation aborted');
+                abortErr.name = 'AbortError';
+                reject(abortErr);
+              },
+              { once: true },
+            );
+          }
+        });
       }
     }
   }
@@ -172,8 +195,12 @@ export class LLMAdapter {
       temperature?: number;
       maxTokens?: number;
       promptRegistryId?: string;
+      signal?: AbortSignal;
     },
   ): Promise<{ success: true; data: T; response: LLMResponse } | { success: false; error: string }> {
+    if (options?.signal?.aborted) {
+      return { success: false, error: 'LLM operation aborted' };
+    }
     if (isCircuitOpen(tier)) {
       return { success: false, error: `Circuit breaker open for ${tier}` };
     }
@@ -245,10 +272,79 @@ export class LLMAdapter {
     apiKey: string,
     systemPrompt: string,
     userMessage: string,
-    options?: { temperature?: number; maxTokens?: number },
+    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal },
   ): Promise<{ success: true; response: LLMResponse } | { success: false; error: string }> {
     try {
+      if (!apiKey || apiKey.trim() === '') {
+        return {
+          success: false,
+          error: `API key for provider "${modelConfig.provider}" is missing or unconfigured`,
+        };
+      }
+
+      if (options?.signal?.aborted) {
+        return {
+          success: false,
+          error: 'LLM operation aborted',
+        };
+      }
+
       const response = await withRetry(async () => {
+        const timeoutSignal = AbortSignal.timeout(30_000);
+        let requestSignal: AbortSignal = timeoutSignal;
+        if (options?.signal) {
+          if (typeof (AbortSignal as any).any === 'function') {
+            requestSignal = (AbortSignal as any).any([timeoutSignal, options.signal]);
+          } else {
+            const controller = new AbortController();
+            timeoutSignal.addEventListener('abort', () => controller.abort(), { once: true });
+            options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+            if (options.signal.aborted || timeoutSignal.aborted) {
+              controller.abort();
+            }
+            requestSignal = controller.signal;
+          }
+        }
+
+        if (modelConfig.provider === 'anthropic') {
+          const res = await fetch(modelConfig.apiUrl, {
+            method: 'POST',
+            headers: {
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: modelConfig.model,
+              system: systemPrompt,
+              messages: [{ role: 'user', content: userMessage }],
+              temperature: options?.temperature ?? 0,
+              max_tokens: options?.maxTokens ?? modelConfig.maxTokens,
+            }),
+            signal: requestSignal,
+          });
+
+          if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(`Anthropic API error: ${res.status} ${res.statusText} ${errText}`.trim());
+          }
+
+          const data = (await res.json()) as {
+            content?: Array<{ type: string; text?: string }>;
+            usage?: { input_tokens?: number; output_tokens?: number };
+          };
+
+          const textBlock = data.content?.find((c) => c.type === 'text')?.text ?? data.content?.[0]?.text;
+          if (!textBlock) throw new Error('Empty Anthropic LLM response');
+
+          return {
+            content: textBlock,
+            inputTokens: data.usage?.input_tokens ?? 0,
+            outputTokens: data.usage?.output_tokens ?? 0,
+          };
+        }
+
+        // Groq / OpenAI-compatible endpoint
         const res = await fetch(modelConfig.apiUrl, {
           method: 'POST',
           headers: {
@@ -265,35 +361,48 @@ export class LLMAdapter {
             max_tokens: options?.maxTokens ?? modelConfig.maxTokens,
             response_format: { type: 'json_object' },
           }),
-          signal: AbortSignal.timeout(30_000), // 30s timeout
+          signal: requestSignal,
         });
 
         if (!res.ok) {
-          throw new Error(`LLM API error: ${res.status} ${res.statusText}`);
+          const errText = await res.text().catch(() => '');
+          throw new Error(`LLM API error (${modelConfig.provider}): ${res.status} ${res.statusText} ${errText}`.trim());
         }
 
-        return res.json() as Promise<{
-          choices: Array<{ message: { content: string } }>;
-          usage: { prompt_tokens: number; completion_tokens: number };
-        }>;
+        const data = (await res.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
+        };
+
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) throw new Error('Empty LLM response');
+
+        return {
+          content,
+          inputTokens: data.usage?.prompt_tokens ?? 0,
+          outputTokens: data.usage?.completion_tokens ?? 0,
+        };
       });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) throw new Error('Empty LLM response');
-
-      const usage = response.usage;
       const costUsd =
-        usage.prompt_tokens * modelConfig.costPerInputToken +
-        usage.completion_tokens * modelConfig.costPerOutputToken;
+        response.inputTokens * modelConfig.costPerInputToken +
+        response.outputTokens * modelConfig.costPerOutputToken;
+
+      const tier: LLMTier =
+        modelConfig.provider === 'anthropic'
+          ? 'T-C'
+          : modelConfig.model.includes('8b')
+            ? 'T-A'
+            : 'T-B';
 
       return {
         success: true,
         response: {
-          content,
+          content: response.content,
           model: modelConfig.model,
           provider: modelConfig.provider,
-          tier: modelConfig.provider === 'groq' && (modelConfig.model.includes('20b') || modelConfig.model.includes('8b')) ? 'T-A' : modelConfig.provider === 'groq' ? 'T-B' : 'T-C',
-          usage: { input: usage.prompt_tokens, output: usage.completion_tokens },
+          tier,
+          usage: { input: response.inputTokens, output: response.outputTokens },
           costUsd,
         },
       };

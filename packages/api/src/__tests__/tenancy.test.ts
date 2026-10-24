@@ -12,12 +12,15 @@ vi.mock('jose', () => ({
   createRemoteJWKSet: vi.fn(() => 'mock-jwks'),
 }));
 
-// Mock workspace repository
+// Mock workspace repository and withWorkspaceTransaction
 vi.mock('@mushin/database', () => ({
   workspaceRepository: {
     getMembership: vi.fn(),
     findById: vi.fn(),
   },
+  withWorkspaceTransaction: vi.fn(async (db, workspaceId, fn) => {
+    return await fn(db);
+  }),
 }));
 
 import { jwtVerify } from 'jose';

@@ -51,7 +51,7 @@ export class SimilaritySearchService {
     const minSimilarity = options?.minSimilarity ?? 0.5;
 
     const results = await this.db.execute(sql`
-      SELECT * FROM gcp.find_similar_crears(
+      SELECT * FROM gcp.find_similar_creators(
         ${creatorId},
         ${limit},
         ${minSimilarity}

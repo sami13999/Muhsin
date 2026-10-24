@@ -27,7 +27,9 @@ export function createHistoryRoutes(db: Database): Hono {
 
     const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const snapshots = await db
+    const activeDb = (c.get('db' as never) as Database) ?? db;
+
+    const snapshots = await activeDb
       .select({
         snapshotId: enrichmentSnapshot.snapshotId,
         snapshotType: enrichmentSnapshot.snapshotType,

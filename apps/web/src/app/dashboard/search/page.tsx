@@ -14,15 +14,15 @@ export interface SearchCreatorItem {
   displayName: string;
   primaryHandle: string;
   platform: string;
-  followerCount: number;
-  engagementRate: number;
+  followerCount: number | null;
+  engagementRate: number | null;
   _rankingScore: number;
-  city: string;
-  niche: string;
-  iqScore: number;
+  city: string | null;
+  niche: string | null;
+  iqScore: number | null;
   verified: boolean;
   avatarUrl?: string;
-  bio?: string;
+  bio?: string | null;
   canonicalUrl?: string;
   isLive?: boolean;
 }
@@ -727,7 +727,7 @@ export default function SearchPage() {
     let list = creators.filter(c => {
       const name = c.displayName.toLowerCase();
       const handle = c.primaryHandle.toLowerCase();
-      const niche = c.niche.toLowerCase();
+      const niche = (c.niche || '').toLowerCase();
       const bio = (c.bio || '').toLowerCase();
       if (
         name.includes('babar azam') || 
@@ -744,11 +744,13 @@ export default function SearchPage() {
 
     // 2. Dropdown & Platform filters
     list = list.filter(c => {
-      if (filterCity && c.city.toLowerCase() !== filterCity.toLowerCase()) return false;
-      if (filterFollowers === '10K-100K' && (c.followerCount < 10000 || c.followerCount > 100000)) return false;
-      if (filterFollowers === '100K-1M' && (c.followerCount < 100000 || c.followerCount > 1000000)) return false;
-      if (filterFollowers === '1M+' && c.followerCount < 1000000) return false;
-      if (filterEngagement && c.engagementRate < parseFloat(filterEngagement)) return false;
+      if (filterCity && (c.city || '').toLowerCase() !== filterCity.toLowerCase()) return false;
+      const followers = c.followerCount ?? 0;
+      if (filterFollowers === '10K-100K' && (followers < 10000 || followers > 100000)) return false;
+      if (filterFollowers === '100K-1M' && (followers < 100000 || followers > 1000000)) return false;
+      if (filterFollowers === '1M+' && followers < 1000000) return false;
+      const engagement = c.engagementRate ?? 0;
+      if (filterEngagement && engagement < parseFloat(filterEngagement)) return false;
       if (platform !== 'all' && c.platform.toLowerCase() !== platform.toLowerCase()) return false;
       return true;
     });
@@ -784,10 +786,10 @@ export default function SearchPage() {
       let score = 50;
       const name = c.displayName.toLowerCase();
       const handle = c.primaryHandle.toLowerCase();
-      const niche = c.niche.toLowerCase();
-      const city = c.city.toLowerCase();
+      const niche = (c.niche || '').toLowerCase();
+      const city = (c.city || '').toLowerCase();
       const bio = (c.bio || '').toLowerCase();
-      const followers = c.followerCount;
+      const followers = c.followerCount ?? 0;
 
       // 1. Follower Tier Matching (50k+ micro/mid prioritized!)
       if (is50k) {
@@ -957,23 +959,22 @@ export default function SearchPage() {
             displayName: c.displayName || (c as any).handle || `Creator ${idx + 1}`,
             primaryHandle: c.primaryHandle || (c as any).handle || `@creator_${idx + 1}`,
             platform: c.platform || 'instagram',
-            followerCount: c.followerCount || 150000,
-            engagementRate: c.engagementRate || 7.2,
-            _rankingScore: c._rankingScore || 95,
-            city: (c as any).city || 'Karachi',
-            niche: (c as any).niche || 'Lifestyle',
-            iqScore: (c as any).iqScore || 92,
-            verified: true,
+            followerCount: c.followerCount != null ? Number(c.followerCount) : null,
+            engagementRate: c.engagementRate != null ? Number(c.engagementRate) : null,
+            _rankingScore: c._rankingScore || 90,
+            city: (c as any).city || null,
+            niche: (c as any).niche || (c as any).primaryNiche || null,
+            iqScore: (c as any).iqScore || null,
+            verified: Boolean(c.verified),
             avatarUrl: (c as any).avatarUrl || getVerifiedAvatarUrl(c),
-            bio: (c as any).bio,
+            bio: (c as any).bio || null,
             canonicalUrl: (c as any).canonicalUrl || getVerifiedSocialUrl(c),
-            isLive: true,
+            isLive: Boolean((c as any).isLive ?? !c.isMock),
           }));
       }
 
       if (newlyFound.length === 0) {
-        // Pool Discovery (Bouncer Enforced)
-        const qLower = query.toLowerCase();
+        // Pool Discovery (Demo candidates only when explicit demo mode)
         const poolCandidates = LIVE_DISCOVERY_POOL.filter(item => {
           if (existingHandles.has(item.primaryHandle.toLowerCase())) return false;
           if (platform !== 'all' && item.platform.toLowerCase() !== platform.toLowerCase()) return false;
@@ -981,30 +982,15 @@ export default function SearchPage() {
         });
 
         if (poolCandidates.length > 0) {
-          newlyFound = poolCandidates.slice(0, 4);
+          newlyFound = poolCandidates.slice(0, 4).map(p => ({
+            ...p,
+            isLive: false,
+            isDemo: true,
+            displayName: `${p.displayName} [Demo]`,
+          }));
         } else {
-          // Dynamic AI generation for continuous live search on demand (NEVER stops or caps)
-          const genIdx = currentRound;
-          const dynamicHandle = `@pk_${qLower.includes('food') ? 'foodexplorer' : qLower.includes('tech') ? 'gadgetpk' : 'lifestyle_vlogs'}_${genIdx}`;
-          newlyFound = [
-            {
-              creatorId: `cr-gen-${genIdx}-${Date.now()}`,
-              displayName: `${qLower.includes('food') ? 'Karachi Food Diaries' : qLower.includes('tech') ? 'Pak Tech Sphere' : 'Daily Life PK'} (${genIdx})`,
-              primaryHandle: dynamicHandle,
-              platform: platform === 'all' ? 'instagram' : platform,
-              followerCount: query.includes('50k') ? 85000 + (genIdx * 12000) : 320000 + (genIdx * 45000),
-              engagementRate: 8.4 + (genIdx % 3),
-              _rankingScore: 94,
-              city: genIdx % 2 === 0 ? 'Lahore' : 'Karachi',
-              niche: qLower.includes('food') ? 'Food & Reviews' : qLower.includes('tech') ? 'Tech & Gadgets' : 'Lifestyle & Vlogs',
-              iqScore: 92,
-              verified: true,
-              avatarUrl: '/creators/ayla-adnan.jpg',
-              bio: `Live discovered Pakistani creator for ${query}. Verified authentic social presence.`,
-              canonicalUrl: `https://www.instagram.com/${dynamicHandle.replace('@', '')}/`,
-              isLive: true,
-            }
-          ];
+          // Truthful: 0 results when no creators match query
+          newlyFound = [];
         }
       }
 
@@ -1012,7 +998,9 @@ export default function SearchPage() {
       setNewlyDiscoveredBatch(newlyFound);
       setAiTerminalLogs(prev => [
         ...prev,
-        `[02.5s] ✨ Synthesized ${newlyFound.length} fresh verified live creators!`,
+        newlyFound.length > 0
+          ? `[02.5s] ✨ Discovered ${newlyFound.length} live creators across platform endpoints!`
+          : `[02.5s] ℹ️ No matching live creators found for this query.`,
         `[02.6s] Ingested into workspace memory (Cost: 12 credits)`
       ]);
 
